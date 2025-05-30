@@ -8,6 +8,7 @@ import {
   deleteConcertPermanent,
   markAvailability,
   checkConcertAttendance,
+  getAvailableChoristesForConcert,
 } from "../../controllers/admin/concertController.js";
 import { loggedMiddleware } from "../../middlewares/authMiddlewares.js";
 import { allowAll, isAdmin, isChorister } from "../../middlewares/roleMiddlewares.js";
@@ -24,7 +25,7 @@ router.delete("/:id/permanent", isAdmin, deleteConcertPermanent);
 router.post("/restore/:id", isAdmin, restoreConcert);
 router.patch("/:id/availability",  isChorister, markAvailability);
 router.get("/:concertId/attendance/:choristeId", isChorister, checkConcertAttendance);
-
+router.get('/:id/available-choristes', getAvailableChoristesForConcert);
 
 
 export default router;

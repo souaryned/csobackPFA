@@ -136,3 +136,109 @@ export const reminderRepetitionTemplateGrouped = (user, repetitions) => {
   };
 };
 
+
+
+export const createRejectionEmailTemplate = ({ firstName, lastName, reason }) => {
+  const subject = "Candidature refusée – Orchestre CSO";
+
+  const headerContent = `
+    <h2 style="font-size: 22px; color: #4b2e2e;">Cher(e) <strong>${firstName} ${lastName}</strong>,</h2>
+    <p style="font-size: 16px; color: #6d5b4c;">
+      Nous vous remercions d’avoir postulé pour rejoindre l’Orchestre Symphonique de Carthage (CSO).
+    </p>
+  `;
+
+  const bodyContent = `
+    <p>Après examen de votre demande, nous sommes au regret de vous informer que votre candidature a été <strong>refusée</strong>.</p>
+
+    <div style="background: #f9eae3; padding: 15px 20px; margin: 20px 0; border-left: 6px solid #c0392b; border-radius: 4px; color: #6d4c41;">
+      <strong>Raison :</strong> ${reason}
+    </div>
+
+    <p>Nous vous remercions pour votre intérêt et vous souhaitons pleine réussite dans vos futurs projets artistiques.</p>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS,
+  };
+};
+
+
+
+export const createLeaveAcceptedEmailTemplate = (leave) => {
+  const { user, startDate, endDate } = leave;
+  const fullName = `${user.firstName} ${user.lastName}`;
+
+  const subject = 'Votre demande de congé a été acceptée – Orchestre CSO';
+
+  const headerContent = `
+    <h2 style="font-size: 22px; color: #4b2e2e;">Cher(e) <strong>${fullName}</strong>,</h2>
+    <p style="font-size: 16px; color: #6d5b4c;">
+      Nous avons le plaisir de vous informer que votre demande de congé a été <strong>acceptée</strong>.
+    </p>
+  `;
+
+  const bodyContent = `
+    <p>Voici les détails de votre congé :</p>
+    <ul style="font-size: 16px; color: #3c2f2f;">
+      <li><strong>Début :</strong> ${new Date(startDate).toLocaleDateString('fr-FR')}</li>
+      <li><strong>Fin :</strong> ${new Date(endDate).toLocaleDateString('fr-FR')}</li>
+    </ul>
+
+    <p>Nous vous souhaitons un excellent repos !</p>
+
+    <div style="text-align: center; margin: 35px 0;">
+      <a href="${FRONTEND_URL}/auth/signin" target="_blank" style="
+        background: linear-gradient(135deg, rgba(193, 154, 107, 1), rgba(75, 46, 46, 1));
+        color: white;
+        padding: 14px 40px;
+        font-size: 16px;
+        font-weight: bold;
+        text-decoration: none;
+        border-radius: 50px;
+        box-shadow: 0 5px 15px rgba(75, 46, 46, 0.4);
+        display: inline-block;
+      ">
+        🎵 Accéder à votre espace
+      </a>
+    </div>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS,
+  };
+};
+
+
+export const createLeaveDeclaredEmailTemplate = (user, leave) => {
+  const subject = `Nouvelle demande de congé - Orchestre CSO`;
+
+  const headerContent = `
+    <h2 style="font-size: 22px; color: #4b2e2e;">Nouvelle demande de congé reçue</h2>
+    <p style="font-size: 16px; color: #6d5b4c;">
+      <strong>${user.firstName} ${user.lastName}</strong> a soumis une nouvelle demande de congé.
+    </p>
+  `;
+
+  const bodyContent = `
+    <p>Voici les détails de la demande :</p>
+    <ul style="font-size: 16px; color: #3c2f2f;">
+      <li><strong>Début :</strong> ${new Date(leave.startDate).toLocaleDateString('fr-FR')}</li>
+      <li><strong>Fin :</strong> ${new Date(leave.endDate).toLocaleDateString('fr-FR')}</li>
+      <li><strong>Raison :</strong> ${leave.reason || '(Non précisée)'}</li>
+    </ul>
+
+    <p>Merci de traiter cette demande dans l’interface de gestion.</p>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS,
+  };
+};
+

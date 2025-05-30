@@ -106,3 +106,70 @@ export const updateMe = async (req, res) => {
     res.status(400).json({ message: err.message });
   }
 };
+
+
+
+///////////////////////// APPLY FOR MEMBERSHIP /////////////////////////
+export const applyForMembership = async (req, res) => {
+  const {
+    firstName,
+    lastName,
+    email,
+    gender,
+    birthDate,
+    nationality,
+    cin,
+    height,
+    hasMusicalKnowledge,
+    musicalExperience,
+    isActiveInOtherChoir,
+    otherChoir,
+    professionalSituation,
+    phone,
+    motivation,
+  } = req.body;
+
+  try {
+    // Step 1: Check if the email or CIN already exists
+    const existingUser = await User.findOne({ $or: [{ email }, { cin }] });
+    if (existingUser) {
+      return res
+        .status(400)
+        .json({ message: "L'email ou le CIN existe déjà dans le système" });
+    }
+
+    // Step 2: Create a new user with a "Pending" status
+    const newUser = new User({
+      firstName,
+      lastName,
+      email,
+      gender,
+      birthDate,
+      nationality,
+      cin,
+      height,
+      hasMusicalKnowledge,
+      musicalExperience,
+      isActiveInOtherChoir,
+      otherChoir,
+      professionalSituation,
+      phone,
+      motivation,
+      status: "Inactif",
+      role: "choriste", // Default role for applicants
+      memberstatus: "Pending", // Application status
+      isLocked: true,
+    });
+
+    await newUser.save();
+
+    // Step 3: Respond with success
+    return res
+      .status(201)
+      .json({ message: "Votre demande d'adhésion a été soumise avec succès." });
+  } catch (error) {
+    console.error("Error in applyForMembership:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+

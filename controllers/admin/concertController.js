@@ -198,3 +198,25 @@ export const checkConcertAttendance = async (req, res) => {
     res.status(500).json({ message: "Erreur serveur." });
   }
 };
+
+
+
+export const getAvailableChoristesForConcert = async (req, res) => {
+  const concertId = req.params.id;
+
+  try {
+    const concert = await Concert.findById(concertId).populate({
+      path: 'availableChoristes',
+      select: '-password -__v',  // Exclude sensitive or unnecessary fields
+    });
+
+    if (!concert) {
+      return res.status(404).json({ message: 'Concert introuvable.' });
+    }
+
+    res.status(200).json(concert.availableChoristes);
+  } catch (error) {
+    console.error('Erreur lors de la récupération des participants:', error);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};

@@ -4,6 +4,7 @@ import User from '../models/userModel.js';
 import { JWT_SECRET } from '../config.js';
 
 export const loggedMiddleware = async (req, res, next) => {
+
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {

@@ -10,6 +10,8 @@ import userRoutes from "./routes/admin/userRoutes.js";
 import oeuvreRoutes from "./routes/admin/oeuvreRoutes.js";
 import concertRoutes from "./routes/admin/concertRoutes.js";
 import repetitionRoutes from "./routes/admin/repetitionRoutes.js";
+import recordRouter from "./routes/choriste/recordRouter.js";
+
 
 import { scheduleRepetitionReminders } from "./tools/cron/repetitionReminderJob.js";
 
@@ -30,6 +32,7 @@ app.use(
 
 // ─── Your other routes ────────────────────────────────────────────
 app.use("/auth", authRoute);
+app.use("/leave", recordRouter);
 app.use("/users", userRoutes);
 app.use("/oeuvres", oeuvreRoutes);
 app.use("/concerts", concertRoutes);
