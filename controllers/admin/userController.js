@@ -1,7 +1,7 @@
 import User from "../../models/userModel.js";
 import bcrypt from "bcrypt";
 import { sendNotification } from "../../tools/mail/mailNotif.js";
-import { createAccountEmailTemplate, createRejectionEmailTemplate } from "../../tools/mail/notifTemplate.js";
+import { createAccountEmailTemplate, createPupitreUpdatedEmailTemplate, createRejectionEmailTemplate } from "../../tools/mail/notifTemplate.js";
 
 // Utility: Generate a secure random password
 const generateRandomPassword = () => {
@@ -413,4 +413,55 @@ export const getAcceptedMemberships = async (req, res) => {
 
 
 
+export const updatePupitre = async (req, res) => {
+  const { userId } = req.params;
+  const { pupitre } = req.body;
 
+  const validPupitres = ["soprano", "alto", "ténor", "basse"];
+  if (!validPupitres.includes(pupitre)) {
+    return res.status(400).json({ message: "Valeur de pupitre invalide." });
+  }
+
+  try {
+    const user = await User.findById(userId);
+    if (!user || user.role !== 'choriste') {
+      return res.status(404).json({ message: "Choriste non trouvé." });
+    }
+
+    user.pupitre = pupitre;
+    await user.save();
+
+    // ✅ Notify the user by email using templated structure
+    const emailData = createPupitreUpdatedEmailTemplate(user);
+
+    await sendNotification({
+      email: user.email,
+      subject: emailData.subject,
+      htmlContent: emailData.htmlContent,
+      attachments: emailData.attachments || [],
+    });
+
+    res.status(200).json({ message: "Pupitre mis à jour avec succès.", user });
+  } catch (error) {
+    console.error("Erreur mise à jour pupitre:", error);
+    res.status(500).json({ message: "Erreur serveur." });
+  }
+};
+
+
+
+export const getActiveChoristes = async (req, res) => {
+  try {
+    const excludedStatuses = ["Inactif", "En congé", "éliminé"];
+
+    const choristes = await User.find({
+      role: 'choriste',
+      status: { $nin: excludedStatuses }
+    }).select('email lastName firstName pupitre'); // Only return these fields
+
+    res.status(200).json(choristes);
+  } catch (error) {
+    console.error("Erreur lors de la récupération des choristes actifs:", error);
+    res.status(500).json({ message: "Erreur serveur lors de la récupération des choristes." });
+  }
+};

@@ -11,27 +11,31 @@ import {
   acceptMembership,
   refuseMembership,
   getAcceptedMemberships,
+  updatePupitre,
+  getActiveChoristes,
   // eliminateUser
 } from '../../controllers/admin/userController.js';
 import { loggedMiddleware } from '../../middlewares/authMiddlewares.js';
-import { isAdmin } from '../../middlewares/roleMiddlewares.js';
+import { isAdmin, isManager } from '../../middlewares/roleMiddlewares.js';
 
 const router = express.Router();
 
-router.use(loggedMiddleware, isAdmin);
+router.use(loggedMiddleware);
 
 router.post('/', createUser);
 // router.post('/eliminate/:id', eliminateUser);
-router.get('/', getUsers);
-router.get('/locked', getLockedUsers);
-router.patch('/:id', updateUser);
-router.delete('/:id', lockUser);
-router.delete('/:id/permanent', deleteUserPermanent); // hard‑delete
-router.post('/restore/:id', restoreUser);
-router.get('/membership-submissions', getMembershipSubmissions);
-router.put('/accept/:id', acceptMembership);
-router.put("/refuse/:id", refuseMembership);
-router.get('/accepted-memberships', getAcceptedMemberships);
+router.get('/', isAdmin,getUsers);
+router.get('/locked', isAdmin,getLockedUsers);
+router.patch('/:id', isAdmin,updateUser);
+router.delete('/:id', isAdmin,lockUser);
+router.delete('/:id/permanent', isAdmin,deleteUserPermanent); // hard‑delete
+router.post('/restore/:id', isAdmin,restoreUser);
+router.get('/membership-submissions', isAdmin,getMembershipSubmissions);
+router.put('/accept/:id', isAdmin,acceptMembership);
+router.put("/refuse/:id", isAdmin,refuseMembership);
+router.get('/accepted-memberships', isAdmin,getAcceptedMemberships);
+router.put('/:userId/voc-pupitre', isManager, updatePupitre);
+router.get('/active', isManager,getActiveChoristes);
 
 
 

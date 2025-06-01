@@ -242,3 +242,32 @@ export const createLeaveDeclaredEmailTemplate = (user, leave) => {
   };
 };
 
+
+
+
+
+export const createPupitreUpdatedEmailTemplate = (user) => {
+  const subject = `Mise à jour de votre tessiture vocale - Orchestre CSO`;
+
+  const headerContent = `
+    <h2 style="font-size: 22px; color: #4b2e2e;">Tessiture vocale mise à jour</h2>
+    <p style="font-size: 16px; color: #6d5b4c;">
+      Bonjour <strong>${user.firstName} ${user.lastName}</strong>, votre tessiture vocale a été modifiée par un responsable.
+    </p>
+  `;
+
+  const bodyContent = `
+    <p>Voici votre nouvelle tessiture :</p>
+    <ul style="font-size: 16px; color: #3c2f2f;">
+      <li><strong>Tessiture :</strong> ${user.pupitre.charAt(0).toUpperCase() + user.pupitre.slice(1)}</li>
+    </ul>
+
+    <p>Merci pour votre implication au sein de l’orchestre.</p>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS,
+  };
+};

@@ -7,9 +7,9 @@ import { acceptLeave, declareLeave, getAllLeaves } from '../../controllers/chori
 const router = express.Router();
 
 router.use(loggedMiddleware);
-router.get('/', loggedMiddleware, isManager,getAllLeaves);
+router.get('/', isManager,getAllLeaves);
 router.post('/:id/declare-leave',isChorister, declareLeave);
-router.put('/:leaveId/accept', loggedMiddleware, isManager, acceptLeave);
+router.put('/:leaveId/accept', isManager, acceptLeave);
 
 
 

@@ -6,7 +6,11 @@ import { createLeaveAcceptedEmailTemplate, createLeaveDeclaredEmailTemplate } fr
 
 export const getAllLeaves = async (req, res) => {
   try {
-    const leaves = await Leave.find()
+    const today = new Date();
+    // Set time to 00:00:00 to only compare dates (optional)
+    today.setHours(0, 0, 0, 0);
+
+    const leaves = await Leave.find({ endDate: { $gte: today } })  // <-- filter here
       .populate({
         path: 'user',
         select: 'firstName lastName email status role',
@@ -19,6 +23,7 @@ export const getAllLeaves = async (req, res) => {
     res.status(500).json({ message: 'Erreur serveur.' });
   }
 };
+
 
 
 

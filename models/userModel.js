@@ -11,19 +11,19 @@ const userSchema = new mongoose.Schema({
     type: String,
     enum: ["Homme", "Femme"],
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
   birthDate: {
     type: String,
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
   nationality: {
     type: String,
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
   cin: {
@@ -31,20 +31,20 @@ const userSchema = new mongoose.Schema({
     unique: true,
     sparse: true,
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
   height: {
     type: Number,
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
 
   hasMusicalKnowledge: {
     type: Boolean,
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
   musicalExperience: {
@@ -55,7 +55,7 @@ const userSchema = new mongoose.Schema({
   isActiveInOtherChoir: {
     type: Boolean,
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
   otherChoir: {
@@ -91,12 +91,11 @@ const userSchema = new mongoose.Schema({
       // "Choriste"
     ],
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
 
-
-    memberstatus: {
+  memberstatus: {
     type: String,
     enum: [
       "Pending", // Application submitted, awaiting review
@@ -104,20 +103,20 @@ const userSchema = new mongoose.Schema({
       "Refused", // Application rejected by admin
     ],
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
 
   pupitre: {
     type: String,
     enum: ["soprano", "alto", "ténor", "basse"],
-    required:false
+    required: false,
   },
 
   motivation: {
     type: String, // Why join the choir
     required: function () {
-      return this.role === "choriste";
+      return this.isNew && this.role === "choriste";
     },
   },
 
@@ -137,9 +136,9 @@ const userSchema = new mongoose.Schema({
   },
 
   rejectionReason: {
-  type: String,
-  default: '',
-},
+    type: String,
+    default: "",
+  },
 
   createdAt: {
     type: Date,
