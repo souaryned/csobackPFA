@@ -11,7 +11,7 @@ import oeuvreRoutes from "./routes/admin/oeuvreRoutes.js";
 import concertRoutes from "./routes/admin/concertRoutes.js";
 import repetitionRoutes from "./routes/admin/repetitionRoutes.js";
 import recordRouter from "./routes/choriste/recordRouter.js";
-
+import dashboardRouter from "./routes/dashboardRoutes.js"
 
 import { scheduleRepetitionReminders } from "./tools/cron/repetitionReminderJob.js";
 
@@ -37,6 +37,7 @@ app.use("/users", userRoutes);
 app.use("/oeuvres", oeuvreRoutes);
 app.use("/concerts", concertRoutes);
 app.use("/repetition", repetitionRoutes);
+app.use("/dashboard", dashboardRouter);
 
 
 // ─── Cron job ─────────────────────────────────

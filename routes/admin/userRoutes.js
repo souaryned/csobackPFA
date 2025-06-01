@@ -16,7 +16,7 @@ import {
   // eliminateUser
 } from '../../controllers/admin/userController.js';
 import { loggedMiddleware } from '../../middlewares/authMiddlewares.js';
-import { isAdmin, isManager } from '../../middlewares/roleMiddlewares.js';
+import { isAdmin, isAdminOrChef, isManager } from '../../middlewares/roleMiddlewares.js';
 
 const router = express.Router();
 
@@ -33,7 +33,7 @@ router.post('/restore/:id', isAdmin,restoreUser);
 router.get('/membership-submissions', isAdmin,getMembershipSubmissions);
 router.put('/accept/:id', isAdmin,acceptMembership);
 router.put("/refuse/:id", isAdmin,refuseMembership);
-router.get('/accepted-memberships', isAdmin,getAcceptedMemberships);
+router.get('/accepted-memberships', isAdminOrChef,getAcceptedMemberships);
 router.put('/:userId/voc-pupitre', isManager, updatePupitre);
 router.get('/active', isManager,getActiveChoristes);
 

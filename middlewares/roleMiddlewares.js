@@ -44,10 +44,28 @@ export const isManagerOrAdmin = (req, res, next) => {
 };
 
 
+export const isChoristeOrChef = (req, res, next) => {
+  const { role } = req.auth;
+  if (role !== "choriste" && role !== "chef de choeur") {
+    return res.status(403).json({ error: "Accès refusé. choriste ou chef uniquement." });
+  }
+  next();
+};
+
+
+export const isAdminOrChef = (req, res, next) => {
+  const { role } = req.auth;
+  if (role !== "admin" && role !== "chef de choeur") {
+    return res.status(403).json({ error: "Accès refusé. Admin ou chef uniquement." });
+  }
+  next();
+};
+
+
 // 📌 Allow all internal roles (admin, manager, choriste)
 export const isInternal = (req, res, next) => {
   const { role } = req.auth;
-  if (!["admin", "manager", "choriste"].includes(role)) {
+  if (!["admin", "manager", "choriste", "chef de choeur"].includes(role)) {
     return res.status(403).json({ error: "Accès refusé. Membres internes uniquement." });
   }
   next();
@@ -57,7 +75,7 @@ export const isInternal = (req, res, next) => {
 // 📌 Allow all known roles: admin, manager, choriste
 export const allowAll = (req, res, next) => {
   const { role } = req.auth;
-  if (!["admin", "manager", "choriste"].includes(role)) {
+  if (!["admin", "manager", "choriste","chef de choeur"].includes(role)) {
     return res.status(403).json({ error: "Accès refusé. Rôle non autorisé." });
   }
   next();
