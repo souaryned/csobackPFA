@@ -1,7 +1,12 @@
 import User from "../../models/userModel.js";
 import bcrypt from "bcrypt";
 import { sendNotification } from "../../tools/mail/mailNotif.js";
-import { createAccountEmailTemplate, createPupitreUpdatedEmailTemplate, createRejectionEmailTemplate } from "../../tools/mail/notifTemplate.js";
+import {
+  createAccountEmailTemplate,
+  createPupitreUpdatedEmailTemplate,
+  createRejectionEmailTemplate,
+  createTestDateEmailTemplate,
+} from "../../tools/mail/notifTemplate.js";
 
 // Utility: Generate a secure random password
 const generateRandomPassword = () => {
@@ -31,43 +36,68 @@ export const createUser = async (req, res) => {
       pupitre,
     } = req.body;
 
+    // 1) Champs obligatoires
     if (!firstName || !lastName || !email || !role) {
       return res.status(400).json({ message: "Required fields missing." });
     }
 
-    const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(409).json({ message: "User already exists." });
+    // 2) Vérifier l’email (toujours)
+    const existingByEmail = await User.findOne({ email });
+    if (existingByEmail) {
+      return res.status(409).json({ message: "Email existe deja." });
     }
 
+    // 3) Si rôle = "choriste", vérifier aussi le CIN
+    if (role === "choriste") {
+      if (!cin) {
+        return res.status(400).json({ message: "CIN is required for choriste." });
+      }
+      const existingByCin = await User.findOne({ cin });
+      if (existingByCin) {
+        return res.status(409).json({ message: "Cin existe deja" });
+      }
+    }
+
+    // 4) Générer et hasher le mot de passe
     const plainPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
+    // 5) Construire l’objet userData de base
     const userData = {
       firstName,
       lastName,
       email,
       role,
-      phone, // ✅ always included
+      phone: phone || "",
       password: hashedPassword,
     };
 
+    // 6) Si c’est un choriste, ajouter les champs spécifiques
     if (role === "choriste") {
+      // vérifier que tous les champs choriste sont fournis
+      if (!gender || !birthDate || !nationality || !height) {
+        return res
+          .status(400)
+          .json({ message: "Missing fields for choriste." });
+      }
       Object.assign(userData, {
         gender,
         birthDate,
         nationality,
         cin,
         height,
-        hasMusicalKnowledge,
-        hasInstrumentalKnowledge,
-        pupitre,
+        hasMusicalKnowledge: !!hasMusicalKnowledge,
+        hasInstrumentalKnowledge: !!hasInstrumentalKnowledge,
+        pupitre: pupitre || "",
+        status: "Junior",
       });
     }
 
+    // 7) Sauvegarder en base
     const newUser = new User(userData);
     await newUser.save();
 
+    // 8) Envoyer l’email de création de compte
     const emailData = createAccountEmailTemplate({
       firstName,
       lastName,
@@ -82,12 +112,14 @@ export const createUser = async (req, res) => {
       attachments: emailData.attachments,
     });
 
-    res.status(201).json({ message: "User created successfully." });
+    return res.status(201).json({ message: "User created successfully." });
   } catch (error) {
     console.error("Error creating user:", error);
-    res.status(500).json({ message: "Server error." });
+    return res.status(500).json({ message: "Server error." });
   }
 };
+
+
 
 export const getUsers = async (req, res) => {
   try {
@@ -273,7 +305,7 @@ export const getMembershipSubmissions = async (req, res) => {
   try {
     // Find all users who are choristes and their memberstatus is "Pending" (or all statuses if you want)
     const submissions = await User.find(
-      { role: "choriste", memberstatus: "Pending" },
+      { role: "candidate", memberstatus: "Pending" },
       {
         firstName: 1,
         lastName: 1,
@@ -297,50 +329,49 @@ export const getMembershipSubmissions = async (req, res) => {
   }
 };
 
-export const acceptMembership = async (req, res) => {
-  try {
-    const { id } = req.params;
+// export const acceptMembership = async (req, res) => {
+//   try {
+//     const { id } = req.params;
 
-    const user = await User.findById(id);
+//     const user = await User.findById(id);
 
-    if (!user || user.role !== 'choriste') {
-      return res.status(404).json({ message: 'Choriste not found.' });
-    }
+//     if (!user || user.role !== 'choriste') {
+//       return res.status(404).json({ message: 'Choriste not found.' });
+//     }
 
-    // Generate password
-    const plainPassword = generateRandomPassword();
-    const hashedPassword = await bcrypt.hash(plainPassword, 10);
+//     // Generate password
+//     const plainPassword = generateRandomPassword();
+//     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-    // Update user fields
-    user.isLocked = false;
-    user.memberstatus = 'Accepted';
-    user.password = hashedPassword;
-    user.status = 'Junior'
+//     // Update user fields
+//     user.isLocked = false;
+//     user.memberstatus = 'Accepted';
+//     user.password = hashedPassword;
+//     user.status = 'Junior'
 
-    await user.save();
+//     await user.save();
 
-    // Prepare & send email
-    const emailData = createAccountEmailTemplate({
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      password: plainPassword,
-    });
+//     // Prepare & send email
+//     const emailData = createAccountEmailTemplate({
+//       firstName: user.firstName,
+//       lastName: user.lastName,
+//       email: user.email,
+//       password: plainPassword,
+//     });
 
-    await sendNotification({
-      email: user.email,
-      subject: emailData.subject,
-      htmlContent: emailData.htmlContent,
-      attachments: emailData.attachments,
-    });
+//     await sendNotification({
+//       email: user.email,
+//       subject: emailData.subject,
+//       htmlContent: emailData.htmlContent,
+//       attachments: emailData.attachments,
+//     });
 
-    res.status(200).json({ message: 'Membership accepted and credentials sent.' });
-  } catch (error) {
-    console.error('Error accepting membership:', error);
-    res.status(500).json({ message: 'Failed to accept membership.' });
-  }
-};
-
+//     res.status(200).json({ message: 'Membership accepted and credentials sent.' });
+//   } catch (error) {
+//     console.error('Error accepting membership:', error);
+//     res.status(500).json({ message: 'Failed to accept membership.' });
+//   }
+// };
 
 export const refuseMembership = async (req, res) => {
   try {
@@ -374,7 +405,9 @@ export const refuseMembership = async (req, res) => {
     // Then delete the user
     await user.deleteOne();
 
-    res.status(200).json({ message: "Membership refused, user notified and deleted." });
+    res
+      .status(200)
+      .json({ message: "Membership refused, user notified and deleted." });
   } catch (error) {
     console.error("Error refusing membership:", error);
     res.status(500).json({ message: "Failed to refuse membership." });
@@ -384,7 +417,7 @@ export const refuseMembership = async (req, res) => {
 export const getAcceptedMemberships = async (req, res) => {
   try {
     const acceptedMembers = await User.find(
-      { role: "choriste", memberstatus: "Accepted" },
+      { role: "choriste" },
       {
         firstName: 1,
         lastName: 1,
@@ -405,13 +438,52 @@ export const getAcceptedMemberships = async (req, res) => {
     res.status(200).json(acceptedMembers);
   } catch (error) {
     console.error("Error fetching accepted memberships:", error);
-    res
-      .status(500)
-      .json({ message: "Failed to fetch accepted choristes." });
+    res.status(500).json({ message: "Failed to fetch accepted choristes." });
   }
 };
 
-
+export const sendTestDates = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.body;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const datesArray = [];
+    const current = new Date(start);
+    while (current <= end) {
+      datesArray.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+    const candidates = await User.find({
+      role: "candidate",
+      memberstatus: "Pending",
+    });
+    for (const candidate of candidates) {
+      const idx = Math.floor(Math.random() * datesArray.length);
+      const assignedDate = datesArray[idx];
+      candidate.testDate = assignedDate;
+      candidate.memberstatus = "TestScheduled";
+      await candidate.save();
+      const emailData = createTestDateEmailTemplate({
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email,
+        assignedDate,
+      });
+      await sendNotification({
+        email: candidate.email,
+        subject: emailData.subject,
+        htmlContent: emailData.htmlContent,
+        attachments: emailData.attachments,
+      });
+    }
+    return res.status(200).json({ message: "Dates de test envoyées." });
+  } catch (error) {
+    console.error(error);
+    return res
+      .status(500)
+      .json({ message: "Erreur lors de l’envoi des dates." });
+  }
+};
 
 export const updatePupitre = async (req, res) => {
   const { userId } = req.params;
@@ -424,7 +496,7 @@ export const updatePupitre = async (req, res) => {
 
   try {
     const user = await User.findById(userId);
-    if (!user || user.role !== 'choriste') {
+    if (!user || user.role !== "choriste") {
       return res.status(404).json({ message: "Choriste non trouvé." });
     }
 
@@ -450,18 +522,25 @@ export const updatePupitre = async (req, res) => {
 
 
 
+
 export const getActiveChoristes = async (req, res) => {
   try {
     const excludedStatuses = ["Inactif", "En congé", "éliminé"];
 
     const choristes = await User.find({
-      role: 'choriste',
-      status: { $nin: excludedStatuses }
-    }).select('email lastName firstName pupitre'); // Only return these fields
+      role: "choriste",
+      status: { $nin: excludedStatuses },
+    }).select("email lastName firstName pupitre gender"); // ← on ajoute “gender”
 
     res.status(200).json(choristes);
   } catch (error) {
-    console.error("Erreur lors de la récupération des choristes actifs:", error);
-    res.status(500).json({ message: "Erreur serveur lors de la récupération des choristes." });
+    console.error(
+      "Erreur lors de la récupération des choristes actifs:",
+      error
+    );
+    res.status(500).json({
+      message: "Erreur serveur lors de la récupération des choristes.",
+    });
   }
 };
+

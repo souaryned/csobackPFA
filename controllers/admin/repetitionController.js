@@ -1,11 +1,11 @@
 import Repetition from "../../models/repetitionModel.js";
 import User from "../../models/userModel.js";
-
+import Config from "../../models/configModel.js";
 export const createRepetition = async (req, res) => {
   try {
     const { date, startTime, endTime } = req.body;
 
-    // 1) Validation horaire
+    // 1) Time validation
     if (startTime && endTime && date) {
       const [startHour, startMin] = startTime.split(":").map(Number);
       const [endHour, endMin] = endTime.split(":").map(Number);
@@ -16,39 +16,54 @@ export const createRepetition = async (req, res) => {
       let end = new Date(date);
       end.setHours(endHour, endMin, 0, 0);
 
+      // If end is not strictly after start, roll into next day
       if (end <= start) {
-        end.setDate(end.getDate() + 1); // passage au lendemain
+        end.setDate(end.getDate() + 1);
       }
 
+      // Still not after start → error
       if (end <= start) {
         return res.status(400).json({
-          message: "L'heure de fin doit être après l'heure de début.",
+          message: "End time must be after start time.",
         });
       }
     }
 
-    // 2) Vérifier duplication
-    const existing = await Repetition.findOne({ date });
-    if (existing) {
-      return res
-        .status(409)
-        .json({ message: "Une répétition à cette date existe déjà." });
+    // 2) Prevent full-choir duplicate on the same date
+    //    Find all existing repetitions on this date
+    const existingReps = await Repetition.find({ date });
+    const fullChoir = ["soprano", "alto", "ténor", "basse"];
+
+    // Check if any existing repetition already covers all 4 parts
+    const hasFullOnDate = existingReps.some((rep) =>
+      Array.isArray(rep.pupitres) &&
+      rep.pupitres.length === fullChoir.length &&
+      fullChoir.every((p) => rep.pupitres.includes(p))
+    );
+
+    if (hasFullOnDate) {
+      return res.status(409).json({
+        message:
+          "A rehearsal covering all voice parts already exists on this date.",
+      });
     }
 
-    // 3) Forcer tous les pupitres cochés
+    // 3) Force all four voice parts to be present
+    //    (If you later want partial checkboxes, remove this hard-coded array
+    //     and use req.body.pupitres instead.)
     const pupitres = ["soprano", "alto", "ténor", "basse"];
 
-    // 4) Création
+    // 4) Create and save
     const repetition = new Repetition({
       ...req.body,
       pupitres,
     });
 
     await repetition.save();
-    res.status(201).json({ message: "Répétition créée avec succès." });
+    res.status(201).json({ message: "Rehearsal created successfully." });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Erreur lors de la création." });
+    res.status(500).json({ message: "Error creating rehearsal." });
   }
 };
 
@@ -162,24 +177,82 @@ export const deleteRepetitionPermanent = async (req, res) => {
 };
 
 // 📥 New: Calculate attendance rate for choristes by concert
+// export const getAttendanceForConcert = async (req, res) => {
+//   try {
+//     const { concertId } = req.params;
+
+//     // Get all repetitions for the concert
+//     const repetitions = await Repetition.find({ concert: concertId });
+//     if (!repetitions.length) {
+//       return res
+//         .status(404)
+//         .json({ message: "Aucune répétition trouvée pour ce concert." });
+//     }
+
+//     // Get all active choristes
+//     const choristes = await User.find({
+//       role: "choriste",
+//       isChoristeLocked: { $ne: true },
+//     });
+
+//     const participation = choristes.map((choriste) => {
+//       let totalReps = 0;
+//       let attendedReps = 0;
+
+//       repetitions.forEach((rep) => {
+//         const pupitreEntry = rep.pupitres.find(
+//           (p) => p.name === choriste.pupitre
+//         );
+//         if (pupitreEntry) {
+//           totalReps++;
+//           if (pupitreEntry.participationRate >= 70) {
+//             // Treat >=70% as attended
+//             attendedReps++;
+//           }
+//         }
+//       });
+
+//       const attendanceRate =
+//         totalReps > 0 ? Math.round((attendedReps / totalReps) * 100) : 0;
+
+//       return {
+//         choristeId: choriste._id,
+//         firstName: choriste.firstName,
+//         lastName: choriste.lastName,
+//         email: choriste.email,
+//         attendanceRate,
+//       };
+//     });
+
+//     res.json(participation);
+//   } catch (error) {
+//     console.error("Erreur calcul taux de participation:", error);
+//     res.status(500).json({ message: "Erreur serveur." });
+//   }
+// };
+
+
 export const getAttendanceForConcert = async (req, res) => {
   try {
     const { concertId } = req.params;
 
-    // Get all repetitions for the concert
+    // 1) Charger le seuil de participation depuis la config
+    const config = await Config.findOne();
+    const threshold = config ? config.participationThreshold : 70;
+
+    // 2) Récupérer toutes les répétitions liées au concert
     const repetitions = await Repetition.find({ concert: concertId });
     if (!repetitions.length) {
-      return res
-        .status(404)
-        .json({ message: "Aucune répétition trouvée pour ce concert." });
+      return res.status(404).json({ message: "Aucune répétition trouvée pour ce concert." });
     }
 
-    // Get all active choristes
+    // 3) Obtenir les choristes actifs
     const choristes = await User.find({
       role: "choriste",
       isChoristeLocked: { $ne: true },
     });
 
+    // 4) Calculer le taux de participation de chaque choriste
     const participation = choristes.map((choriste) => {
       let totalReps = 0;
       let attendedReps = 0;
@@ -190,8 +263,7 @@ export const getAttendanceForConcert = async (req, res) => {
         );
         if (pupitreEntry) {
           totalReps++;
-          if (pupitreEntry.participationRate >= 70) {
-            // Treat >=70% as attended
+          if (pupitreEntry.participationRate >= threshold) {
             attendedReps++;
           }
         }
@@ -209,7 +281,11 @@ export const getAttendanceForConcert = async (req, res) => {
       };
     });
 
-    res.json(participation);
+    // 5) Répondre avec les données et le seuil utilisé
+    res.json({
+      threshold,
+      participation,
+    });
   } catch (error) {
     console.error("Erreur calcul taux de participation:", error);
     res.status(500).json({ message: "Erreur serveur." });

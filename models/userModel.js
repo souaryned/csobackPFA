@@ -54,9 +54,7 @@ const userSchema = new mongoose.Schema({
 
   isActiveInOtherChoir: {
     type: Boolean,
-    required: function () {
-      return this.isNew && this.role === "choriste";
-    },
+    required: false,
   },
   otherChoir: {
     type: String, // Name of another choir, if applicable
@@ -70,12 +68,19 @@ const userSchema = new mongoose.Schema({
 
   phone: {
     type: String,
-    required: true,
+    required: false,
   },
 
   role: {
     type: String,
-    enum: ["choriste", "manager", "chef du pupitre", "chef de choeur", "admin"],
+    enum: [
+      "candidate",
+      "choriste",
+      "manager",
+      "chef du pupitre",
+      "chef de choeur",
+      "admin",
+    ],
     required: true,
   },
 
@@ -90,23 +95,21 @@ const userSchema = new mongoose.Schema({
       "éliminé",
       // "Choriste"
     ],
-    required: function () {
-      return this.isNew && this.role === "choriste";
-    },
+    required: false,
   },
 
+  previousStatus: {
+  type: String,
+  enum: ["Inactif", "Junior", "Sénior", "Vétéran", "éliminé"],
+  default: null
+},
   memberstatus: {
     type: String,
-    enum: [
-      "Pending", // Application submitted, awaiting review
-      "Accepted", // Application approved by admin
-      "Refused", // Application rejected by admin
-    ],
-    required: function () {
-      return this.isNew && this.role === "choriste";
-    },
+    enum: ["Pending", "TestScheduled", "Accepted", "Refused"],
+    required:false
   },
-
+  
+  testDate: { type: Date, default: null },
   pupitre: {
     type: String,
     enum: ["soprano", "alto", "ténor", "basse"],
@@ -116,7 +119,7 @@ const userSchema = new mongoose.Schema({
   motivation: {
     type: String, // Why join the choir
     required: function () {
-      return this.isNew && this.role === "choriste";
+      return this.isNew && this.role === "candidate";
     },
   },
 

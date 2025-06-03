@@ -109,14 +109,11 @@ export const acceptLeave = async (req, res) => {
   const leaveId = req.params.leaveId;
 
   try {
-    // Find the leave request by ID
-    const leave = await Leave.findById(leaveId).populate('user');  // Populate user here for email
-    
+    // 1. Récupérer la demande de congé
+    const leave = await Leave.findById(leaveId).populate('user');
     if (!leave) {
       return res.status(404).json({ message: 'Demande de congé introuvable.' });
     }
-
-    // Check if already approved or rejected
     if (leave.status === 'approved') {
       return res.status(400).json({ message: 'Cette demande de congé est déjà approuvée.' });
     }
@@ -124,22 +121,23 @@ export const acceptLeave = async (req, res) => {
       return res.status(400).json({ message: 'Cette demande de congé a été refusée.' });
     }
 
-    // Update leave status to approved
+    // 2. Passer la demande en `approved`
     leave.status = 'approved';
     await leave.save();
 
-    // Update user status to "En congé"
+    // 3. Mettre à jour l’utilisateur :
     const user = await User.findById(leave.user._id);
     if (!user) {
       return res.status(404).json({ message: 'Utilisateur associé introuvable.' });
     }
 
-    user.status = 'En congé'; // assuming you have a "status" field for this
+    // -> avant de passer en "En congé", enregistrer l’ancien status
+    user.previousStatus = user.status;  
+    user.status = 'En congé';
     await user.save();
 
-    // Prepare and send acceptance email
+    // 4. Envoyer l’email de confirmation
     const emailData = createLeaveAcceptedEmailTemplate(leave);
-
     await sendNotification({
       email: leave.user.email,
       subject: emailData.subject,
@@ -147,9 +145,12 @@ export const acceptLeave = async (req, res) => {
       attachments: emailData.attachments,
     });
 
-    return res.status(200).json({ message: 'Congé accepté avec succès et email envoyé.', leave });
+    return res
+      .status(200)
+      .json({ message: 'Congé accepté avec succès et email envoyé.', leave });
   } catch (error) {
     console.error('Erreur lors de l’acceptation du congé:', error);
     return res.status(500).json({ message: 'Erreur serveur.' });
   }
 };
+

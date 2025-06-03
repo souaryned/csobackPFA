@@ -8,11 +8,12 @@ import {
   restoreUser,
   deleteUserPermanent,
   getMembershipSubmissions,
-  acceptMembership,
+  // acceptMembership,
   refuseMembership,
   getAcceptedMemberships,
   updatePupitre,
   getActiveChoristes,
+  sendTestDates,
   // eliminateUser
 } from '../../controllers/admin/userController.js';
 import { loggedMiddleware } from '../../middlewares/authMiddlewares.js';
@@ -31,12 +32,12 @@ router.delete('/:id', isAdmin,lockUser);
 router.delete('/:id/permanent', isAdmin,deleteUserPermanent); // hard‑delete
 router.post('/restore/:id', isAdmin,restoreUser);
 router.get('/membership-submissions', isAdmin,getMembershipSubmissions);
-router.put('/accept/:id', isAdmin,acceptMembership);
+// router.put('/accept/:id', isAdmin,acceptMembership);
 router.put("/refuse/:id", isAdmin,refuseMembership);
 router.get('/accepted-memberships', isAdminOrChef,getAcceptedMemberships);
 router.put('/:userId/voc-pupitre', isManager, updatePupitre);
 router.get('/active', isManager,getActiveChoristes);
-
+router.post("/send-test-dates", sendTestDates);
 
 
 export default router;

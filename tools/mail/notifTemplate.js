@@ -271,3 +271,32 @@ export const createPupitreUpdatedEmailTemplate = (user) => {
     attachments: COMMON_ATTACHMENTS,
   };
 };
+
+
+
+export const createTestDateEmailTemplate = ({ firstName, lastName, email, assignedDate }) => {
+  const subject = "Convocation au test – Orchestre CSO";
+  const formattedDate = new Date(assignedDate).toLocaleDateString("fr-FR", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric"
+  });
+  const headerContent = `
+    <h2 style="font-size:22px;color:#4b2e2e;">
+      Cher(e) <strong>${firstName} ${lastName}</strong>,
+    </h2>
+    <p style="font-size:16px;color:#6d5b4c;">
+      Votre test d’admission au CSO est programmé.
+    </p>
+  `;
+  const bodyContent = `
+    <p>Voici votre date de test :</p>
+    <div style="background:#f4f0ea;padding:18px;border-radius:6px;margin:25px 0;font-family:'Courier New',monospace;color:#3c2f2f;">
+      <p><strong>Date du test :</strong> ${formattedDate}</p>
+    </div>
+    <p>Présentez-vous 15 minutes avant. Toute absence non justifiée pourra entraîner la suppression de votre candidature.</p>
+  `;
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS,
+  };
+};

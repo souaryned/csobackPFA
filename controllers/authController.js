@@ -130,15 +130,15 @@ export const applyForMembership = async (req, res) => {
   } = req.body;
 
   try {
-    // Step 1: Check if the email or CIN already exists
+    // 1. Vérifier que l'email ou le CIN n'existe pas déjà
     const existingUser = await User.findOne({ $or: [{ email }, { cin }] });
     if (existingUser) {
-      return res
-        .status(400)
-        .json({ message: "L'email ou le CIN existe déjà dans le système" });
+      return res.status(400).json({
+        message: "L'email ou le CIN existe déjà dans le système",
+      });
     }
 
-    // Step 2: Create a new user with a "Pending" status
+    // 2. Créer un nouvel utilisateur avec role = "candidate" et memberstatus = "Pending"
     const newUser = new User({
       firstName,
       lastName,
@@ -149,21 +149,22 @@ export const applyForMembership = async (req, res) => {
       cin,
       height,
       hasMusicalKnowledge,
-      musicalExperience,
+      musicalExperience: musicalExperience || "",
       isActiveInOtherChoir,
-      otherChoir,
-      professionalSituation,
-      phone,
+      otherChoir: otherChoir || "",
+      professionalSituation: professionalSituation || "",
+      phone: phone || "",
       motivation,
-      status: "Inactif",
-      role: "choriste", // Default role for applicants
-      memberstatus: "Pending", // Application status
-      isLocked: true,
+      status: "Inactif",          // Le candidat n'est pas encore choriste actif
+      role: "candidate",          // Nouveau rôle réservé aux candidats
+      memberstatus: "Pending",    // En attente de programmation de test
+      isLocked: true,             // Compte verrouillé jusqu'à la convocation au test
+      testDate: null,             // À remplir plus tard lors de l'envoi des dates de test
     });
 
     await newUser.save();
 
-    // Step 3: Respond with success
+    // 3. Répondre avec succès
     return res
       .status(201)
       .json({ message: "Votre demande d'adhésion a été soumise avec succès." });

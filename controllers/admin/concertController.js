@@ -1,6 +1,8 @@
 // controllers/admin/concertController.js
 import Concert from "../../models/concertModel.js";
 import Repetition from "../../models/repetitionModel.js";
+import Config from "../../models/configModel.js";
+
 // ➕ Create a concert
 export const createConcert = async (req, res) => {
   try {
@@ -190,9 +192,18 @@ export const checkConcertAttendance = async (req, res) => {
     ).length;
 
     const percentage = (attended / total) * 100;
-    const eligible = percentage >= 50;
 
-    res.json({ eligible, percentage: Math.round(percentage * 100) / 100 });
+    // 🔥 Chargement du seuil dynamique
+    const config = await Config.findOne();
+    const threshold = config?.participationThreshold ?? 70;
+
+    const eligible = percentage >= threshold;
+
+    res.json({
+      eligible,
+      percentage: Math.round(percentage * 100) / 100,
+      threshold,
+    });
   } catch (err) {
     console.error("Erreur calcul présence concert:", err);
     res.status(500).json({ message: "Erreur serveur." });

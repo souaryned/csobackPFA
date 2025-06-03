@@ -11,6 +11,8 @@ import {
 } from '../../controllers/admin/repetitionController.js';
 import { loggedMiddleware } from '../../middlewares/authMiddlewares.js';
 import { allowAll, isAdmin, isChorister, isChoristerOrAdmin } from '../../middlewares/roleMiddlewares.js';
+import { blockIfOnLeave } from '../../middlewares/blockIfOnLeave.js';
+
 
 const router = express.Router();
 
@@ -18,12 +20,12 @@ router.use(loggedMiddleware);
 
 router.post('/', isAdmin,createRepetition);
 router.get('/', isChoristerOrAdmin,getRepetitions);
-router.post("/:id/presence", loggedMiddleware, isChorister, markRepetitionPresence);
+router.post("/:id/presence", loggedMiddleware,blockIfOnLeave, isChorister, markRepetitionPresence);
 router.get('/attendance/:concertId', isAdmin,getAttendanceForConcert);
 router.get("/concert/:concertId", allowAll,getRepetitionsByConcert);
 router.patch('/:id', isAdmin,updateRepetition);
 router.delete('/:id/permanent', isAdmin,deleteRepetitionPermanent);
-router.post("/:id/absence", isChorister, markRepetitionAbsence);
+router.post("/:id/absence", blockIfOnLeave,isChorister, markRepetitionAbsence);
 
 
 export default router;
