@@ -2,6 +2,9 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
 import { JWT_SECRET } from "../config.js";
+import crypto from "crypto";
+import { sendNotification } from "../tools/mail/mailNotif.js";
+import { generateEmailTemplate } from "../tools/mail/notifTemplate.js"; // Adjust path if needed
 
 ///////////////////////// LOGIN (All roles) /////////////////////////
 export const login = async (req, res) => {
@@ -38,7 +41,6 @@ export const login = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Login error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -67,7 +69,6 @@ export const signupAdmin = async (req, res) => {
 
     return res.status(201).json({ message: "Admin created successfully" });
   } catch (error) {
-    console.error("Signup error:", error);
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -107,8 +108,6 @@ export const updateMe = async (req, res) => {
   }
 };
 
-
-
 ///////////////////////// APPLY FOR MEMBERSHIP /////////////////////////
 export const applyForMembership = async (req, res) => {
   const {
@@ -130,47 +129,158 @@ export const applyForMembership = async (req, res) => {
   } = req.body;
 
   try {
-    // 1. Vérifier que l'email ou le CIN n'existe pas déjà
-    const existingUser = await User.findOne({ $or: [{ email }, { cin }] });
-    if (existingUser) {
+    // 1. Find the user by email (created at confirmation step)
+    const userByEmail = await User.findOne({ email });
+
+    // 2. If no user was found with the confirmed email
+    if (!userByEmail) {
       return res.status(400).json({
-        message: "L'email ou le CIN existe déjà dans le système",
+        message: "Email non confirmé ou inexistant. Veuillez d’abord confirmer votre email.",
       });
     }
 
-    // 2. Créer un nouvel utilisateur avec role = "candidate" et memberstatus = "Pending"
-    const newUser = new User({
-      firstName,
-      lastName,
-      email,
-      gender,
-      birthDate,
-      nationality,
-      cin,
-      height,
-      hasMusicalKnowledge,
-      musicalExperience: musicalExperience || "",
-      isActiveInOtherChoir,
-      otherChoir: otherChoir || "",
-      professionalSituation: professionalSituation || "",
-      phone: phone || "",
-      motivation,
-      status: "Inactif",          // Le candidat n'est pas encore choriste actif
-      role: "candidate",          // Nouveau rôle réservé aux candidats
-      memberstatus: "Pending",    // En attente de programmation de test
-      isLocked: true,             // Compte verrouillé jusqu'à la convocation au test
-      testDate: null,             // À remplir plus tard lors de l'envoi des dates de test
-    });
+    // 3. Check if CIN is already used by another user (not this one)
+    const userByCin = await User.findOne({ cin });
+    if (userByCin && userByCin._id.toString() !== userByEmail._id.toString()) {
+      return res.status(400).json({ message: "Ce CIN est déjà utilisé par un autre utilisateur." });
+    }
 
-    await newUser.save();
+    // 4. Update the existing user's information
+    userByEmail.firstName = firstName;
+    userByEmail.lastName = lastName;
+    userByEmail.gender = gender;
+    userByEmail.birthDate = birthDate;
+    userByEmail.nationality = nationality;
+    userByEmail.cin = cin;
+    userByEmail.height = height;
+    userByEmail.hasMusicalKnowledge = hasMusicalKnowledge;
+    userByEmail.musicalExperience = musicalExperience || "";
+    userByEmail.isActiveInOtherChoir = isActiveInOtherChoir;
+    userByEmail.otherChoir = otherChoir || "";
+    userByEmail.professionalSituation = professionalSituation || "";
+    userByEmail.phone = phone || "";
+    userByEmail.motivation = motivation;
+    userByEmail.status = "Inactif";
+    userByEmail.role = "candidate";
+    userByEmail.memberstatus = "Pending";
+    userByEmail.isLocked = true;
+    userByEmail.testDate = null;
 
-    // 3. Répondre avec succès
-    return res
-      .status(201)
-      .json({ message: "Votre demande d'adhésion a été soumise avec succès." });
+    await userByEmail.save();
+
+    return res.status(200).json({ message: "Candidature soumise avec succès." });
   } catch (error) {
-    console.error("Error in applyForMembership:", error);
-    return res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
+
+export const sendEmailConfirmation = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ message: "Email manquant." });
+  }
+
+  try {
+    const existingUser = await User.findOne({ email });
+
+    // ❌ Email already in use
+    if (existingUser) {
+      return res.status(400).json({
+        message: "Email déjà utilisé. Veuillez choisir un autre.",
+      });
+    }
+
+    // ✅ Create temporary user for confirmation process
+    const user = await User.create({
+      email,
+      firstName: "En attente",
+      lastName: "En attente",
+      motivation: "En attente de saisie",
+      emailConfirmed: false,
+      role: "candidate",
+    });
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    user.emailConfirmationToken = token;
+    user.emailConfirmationTokenExpires = expires;
+    await user.save();
+
+    const confirmLink = `http://localhost:3000/confirm-email?token=${token}`;
+
+    // 🔥 Use the styled template here
+    const htmlContent = generateEmailTemplate(
+      "Confirmez votre adresse email",
+      `<p style="font-size: 18px; font-weight: 500;">Bienvenue dans le processus de candidature au CSO 🎶</p>`,
+      `
+        <p>Nous avons bien reçu votre adresse email <strong>${email}</strong>.</p>
+        <p>Pour poursuivre votre candidature, veuillez cliquer sur le lien ci-dessous :</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${confirmLink}" style="background: #5a3e2b; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+            Confirmer mon email
+          </a>
+        </div>
+        <p>Ce lien est valable pendant <strong>1 heure</strong>.</p>
+        <p>Si vous n'avez pas demandé cette confirmation, vous pouvez ignorer ce message.</p>
+      `
+    );
+
+    await sendNotification({
+      email: user.email,
+      subject: "Confirmez votre adresse email",
+      htmlContent,
+      attachments: [
+        {
+          filename: "music.png",
+          path: "./tools/assets/images/music.png",
+          cid: "logo", 
+        },
+      ],
+    });
+
+    res.status(200).json({ message: "Email de confirmation envoyé." });
+  } catch (error) {
+    res.status(500).json({ message: "Erreur serveur." });
+  }
+};
+
+
+export const checkEmailConfirmed = async (req, res) => {
+  const { email } = req.query;
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ emailConfirmed: false });
+    return res.json({ emailConfirmed: user.emailConfirmed || false });
+  } catch (err) {
+    return res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+
+export const confirmEmail = async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) return res.status(400).send("Token manquant");
+
+  try {
+    const user = await User.findOne({
+      emailConfirmationToken: token,
+      emailConfirmationTokenExpires: { $gt: new Date() },
+    });
+
+    if (!user) return res.status(400).send("Lien invalide ou expiré");
+
+    user.emailConfirmed = true;
+    user.emailConfirmationToken = undefined;
+    user.emailConfirmationTokenExpires = undefined;
+    await user.save();
+
+    res.send(
+      "Email confirmé avec succès. Vous pouvez retourner au formulaire."
+    );
+  } catch (err) {
+    res.status(500).send("Erreur serveur");
+  }
+};

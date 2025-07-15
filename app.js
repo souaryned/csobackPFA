@@ -14,7 +14,7 @@ import repetitionRoutes from "./routes/admin/repetitionRoutes.js";
 import recordRouter from "./routes/choriste/recordRouter.js";
 import dashboardRouter from "./routes/dashboardRoutes.js";
 import configRouter from "./routes/admin/configRoutes.js";
-
+import auditionRouter from "./routes/admin/auditionsRoutes.js"
 
 import { scheduleRepetitionReminders } from "./tools/cron/repetitionReminderJob.js";
 import { restoreExpiredLeaves } from "./tools/cron/restoreLeaves.js"
@@ -42,6 +42,7 @@ app.use("/concerts", concertRoutes);
 app.use("/repetition", repetitionRoutes);
 app.use("/dashboard", dashboardRouter);
 app.use("/config", configRouter);
+app.use("/auditions", auditionRouter);
 
 // Cron job pour les rappels de répétition
 scheduleRepetitionReminders();

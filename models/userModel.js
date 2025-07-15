@@ -147,6 +147,26 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+
+
+emailConfirmed: {
+  type: Boolean,
+  default: false,
+},
+
+emailConfirmationToken: {
+  type: String,
+  default: null,
+},
+
+emailConfirmationTokenExpires: {
+  type: Date,
+  default: null,
+},
+
+
+
+
 });
 
 export default mongoose.model("User", userSchema);

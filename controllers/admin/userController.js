@@ -301,11 +301,15 @@ export const restoreUser = async (req, res) => {
 //   }
 // };
 
+// controllers/user.controller.js
+
 export const getMembershipSubmissions = async (req, res) => {
   try {
-    // Find all users who are choristes and their memberstatus is "Pending" (or all statuses if you want)
+    // read `status` from query string; default to Pending
+    const status = req.query.status || "Pending";
+
     const submissions = await User.find(
-      { role: "candidate", memberstatus: "Pending" },
+      { role: "candidate", memberstatus: status },
       {
         firstName: 1,
         lastName: 1,
@@ -317,61 +321,70 @@ export const getMembershipSubmissions = async (req, res) => {
         height: 1,
         professionalSituation: 1,
         phone: 1,
+        motivation: 1,
+        isActiveInOtherChoir: 1,
+        hasMusicalKnowledge: 1,
+        musicalExperience: 1,
+        otherChoir: 1,
+        testDate: 1      // ← include the assigned test date
       }
     );
 
-    res.status(200).json(submissions);
+    return res.status(200).json(submissions);
   } catch (error) {
     console.error("Error fetching membership submissions:", error);
-    res
+    return res
       .status(500)
       .json({ message: "Failed to fetch membership submissions." });
   }
 };
 
-// export const acceptMembership = async (req, res) => {
-//   try {
-//     const { id } = req.params;
 
-//     const user = await User.findById(id);
+export const acceptMembership = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-//     if (!user || user.role !== 'choriste') {
-//       return res.status(404).json({ message: 'Choriste not found.' });
-//     }
+    const user = await User.findById(id);
 
-//     // Generate password
-//     const plainPassword = generateRandomPassword();
-//     const hashedPassword = await bcrypt.hash(plainPassword, 10);
+  // ← allow candidates here, not just choristes
+    if (!user || user.role !== 'candidate') {
+      return res.status(404).json({ message: 'Candidate not found.' });
+    }
 
-//     // Update user fields
-//     user.isLocked = false;
-//     user.memberstatus = 'Accepted';
-//     user.password = hashedPassword;
-//     user.status = 'Junior'
+    // Generate password
+    const plainPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-//     await user.save();
+    // Update user fields
+    user.isLocked = false;
+    user.memberstatus = 'Accepted';
+    user.password = hashedPassword;
+    user.status = 'Junior'
+    user.role = 'choriste'; // Ensure role is set to choriste
 
-//     // Prepare & send email
-//     const emailData = createAccountEmailTemplate({
-//       firstName: user.firstName,
-//       lastName: user.lastName,
-//       email: user.email,
-//       password: plainPassword,
-//     });
+    await user.save();
 
-//     await sendNotification({
-//       email: user.email,
-//       subject: emailData.subject,
-//       htmlContent: emailData.htmlContent,
-//       attachments: emailData.attachments,
-//     });
+    // Prepare & send email
+    const emailData = createAccountEmailTemplate({
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      password: plainPassword,
+    });
 
-//     res.status(200).json({ message: 'Membership accepted and credentials sent.' });
-//   } catch (error) {
-//     console.error('Error accepting membership:', error);
-//     res.status(500).json({ message: 'Failed to accept membership.' });
-//   }
-// };
+    await sendNotification({
+      email: user.email,
+      subject: emailData.subject,
+      htmlContent: emailData.htmlContent,
+      attachments: emailData.attachments,
+    });
+
+    res.status(200).json({ message: 'Membership accepted and credentials sent.' });
+  } catch (error) {
+    console.error('Error accepting membership:', error);
+    res.status(500).json({ message: 'Failed to accept membership.' });
+  }
+};
 
 export const refuseMembership = async (req, res) => {
   try {
@@ -384,8 +397,8 @@ export const refuseMembership = async (req, res) => {
 
     const user = await User.findById(id);
 
-    if (!user || user.role !== "choriste") {
-      return res.status(404).json({ message: "Choriste not found." });
+    if (!user || user.role !== 'candidate') {
+      return res.status(404).json({ message: 'Candidate not found.' });
     }
 
     // Send rejection email first

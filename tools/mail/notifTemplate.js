@@ -37,42 +37,90 @@ export const generateEmailTemplate = (title, headerContent, bodyContent) => `
   </div>
 `;
 
-export const createAccountEmailTemplate = (user) => {
-  const { firstName, lastName, email, password } = user;
 
-  const subject = '🎼 Orchestre Symphonique de Carthage';
+
+
+// export const createAccountEmailTemplate = (user) => {
+//   const { firstName, lastName, email, password } = user;
+
+//   const subject = '🎼 Orchestre Symphonique de Carthage';
+
+//   const headerContent = `
+//     <h2 style="font-size: 22px; color: #4b2e2e;">Cher(e) <strong>${firstName} ${lastName}</strong>,</h2>
+//     <p style="font-size: 16px; color: #6d5b4c;">
+//       Bienvenue parmi les artistes de l'Orchestre Symphonique de Carthage (CSO).
+//     </p>
+//   `;
+
+//   const bodyContent = `
+//     <p>Votre compte a été <strong>activé avec succès</strong>. Voici vos identifiants pour accéder à votre espace :</p>
+
+//     <div style="background: #f4f0ea; padding: 18px; border-radius: 6px; margin: 25px 0; font-family: 'Courier New', monospace; color: #3c2f2f;">
+//       <p><strong>Email :</strong> <a href="mailto:${email}" style="color: #7b3e19;">${email}</a></p>
+//       <p><strong>Mot de passe :</strong> ${password}</p>
+//     </div>
+
+//   <div style="text-align: center; margin: 35px 0;">
+//   <a href="${FRONTEND_URL}/auth/signin" target="_blank" style="
+//     background: linear-gradient(135deg, rgba(193, 154, 107, 1), rgba(75, 46, 46, 1));
+//     color: white;
+//     padding: 14px 40px;
+//     font-size: 16px;
+//     font-weight: bold;
+//     text-decoration: none;
+//     border-radius: 50px;
+//     box-shadow: 0 5px 15px rgba(75, 46, 46, 0.4);
+//     display: inline-block;
+//   ">
+//     🎵 Se connecter
+//   </a>
+// </div>
+
+//   `;
+
+//   return {
+//     subject,
+//     htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+//     attachments: COMMON_ATTACHMENTS,
+//   };
+// };
+export const createAccountEmailTemplate = ({ firstName, lastName, email, password }) => {
+  const subject = '🎼 Orchestre Symphonique de Carthage – Candidature acceptée !';
 
   const headerContent = `
-    <h2 style="font-size: 22px; color: #4b2e2e;">Cher(e) <strong>${firstName} ${lastName}</strong>,</h2>
-    <p style="font-size: 16px; color: #6d5b4c;">
-      Bienvenue parmi les artistes de l'Orchestre Symphonique de Carthage (CSO).
+    <h2 style="font-size:22px;color:#4b2e2e;">
+      Cher(e) <strong>${firstName} ${lastName}</strong>,
+    </h2>
+    <p style="font-size:16px;color:#6d5b4c;">
+      Nous avons le plaisir de vous annoncer que votre candidature a été <strong>acceptée</strong>. 
+      Bienvenue parmi les artistes de l'Orchestre Symphonique de Carthage (CSO) !
     </p>
   `;
 
   const bodyContent = `
-    <p>Votre compte a été <strong>activé avec succès</strong>. Voici vos identifiants pour accéder à votre espace :</p>
+    <p>Votre compte a été activé avec succès. Voici vos identifiants pour accéder à votre espace :</p>
 
-    <div style="background: #f4f0ea; padding: 18px; border-radius: 6px; margin: 25px 0; font-family: 'Courier New', monospace; color: #3c2f2f;">
-      <p><strong>Email :</strong> <a href="mailto:${email}" style="color: #7b3e19;">${email}</a></p>
-      <p><strong>Mot de passe :</strong> ${password}</p>
+    <div style="background:#f4f0ea;padding:18px;border-radius:6px;margin:25px 0;font-family:'Courier New',monospace;color:#3c2f2f;">
+      <p><strong>Email : </strong><a href="mailto:${email}" style="color:#7b3e19;">${email}</a></p>
+      <p><strong>Mot de passe : </strong>${password}</p>
     </div>
 
-  <div style="text-align: center; margin: 35px 0;">
-  <a href="${FRONTEND_URL}/auth/signin" target="_blank" style="
-    background: linear-gradient(135deg, rgba(193, 154, 107, 1), rgba(75, 46, 46, 1));
-    color: white;
-    padding: 14px 40px;
-    font-size: 16px;
-    font-weight: bold;
-    text-decoration: none;
-    border-radius: 50px;
-    box-shadow: 0 5px 15px rgba(75, 46, 46, 0.4);
-    display: inline-block;
-  ">
-    🎵 Se connecter
-  </a>
-</div>
+    <p>Connectez-vous dès maintenant pour découvrir votre espace :</p>
+    <div style="text-align:center;margin:35px 0;">
+      <a href="${FRONTEND_URL}/auth/signin" target="_blank" style="
+        background: linear-gradient(135deg, rgba(193,154,107,1), rgba(75,46,46,1));
+        color:white;padding:14px 40px;font-size:16px;font-weight:bold;
+        text-decoration:none;border-radius:50px;
+        box-shadow:0 5px 15px rgba(75,46,46,0.4);
+        display:inline-block;
+      ">
+        🎵 Se connecter
+      </a>
+    </div>
 
+    <p style="font-size:14px;color:#6d5b4c;">
+      Nous sommes ravis de vous compter parmi nous et avons hâte de collaborer ensemble !
+    </p>
   `;
 
   return {
@@ -81,6 +129,7 @@ export const createAccountEmailTemplate = (user) => {
     attachments: COMMON_ATTACHMENTS,
   };
 };
+
 
 
 export const reminderRepetitionTemplateGrouped = (user, repetitions) => {
@@ -138,24 +187,63 @@ export const reminderRepetitionTemplateGrouped = (user, repetitions) => {
 
 
 
+// export const createRejectionEmailTemplate = ({ firstName, lastName, reason }) => {
+//   const subject = "Candidature refusée – Orchestre CSO";
+
+//   const headerContent = `
+//     <h2 style="font-size: 22px; color: #4b2e2e;">Cher(e) <strong>${firstName} ${lastName}</strong>,</h2>
+//     <p style="font-size: 16px; color: #6d5b4c;">
+//       Nous vous remercions d’avoir postulé pour rejoindre l’Orchestre Symphonique de Carthage (CSO).
+//     </p>
+//   `;
+
+//   const bodyContent = `
+//     <p>Après examen de votre demande, nous sommes au regret de vous informer que votre candidature a été <strong>refusée</strong>.</p>
+
+//     <div style="background: #f9eae3; padding: 15px 20px; margin: 20px 0; border-left: 6px solid #c0392b; border-radius: 4px; color: #6d4c41;">
+//       <strong>Raison :</strong> ${reason}
+//     </div>
+
+//     <p>Nous vous remercions pour votre intérêt et vous souhaitons pleine réussite dans vos futurs projets artistiques.</p>
+//   `;
+
+//   return {
+//     subject,
+//     htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+//     attachments: COMMON_ATTACHMENTS,
+//   };
+// };
+
 export const createRejectionEmailTemplate = ({ firstName, lastName, reason }) => {
-  const subject = "Candidature refusée – Orchestre CSO";
+  const subject = "Votre audition au CSO – Retour";
 
   const headerContent = `
-    <h2 style="font-size: 22px; color: #4b2e2e;">Cher(e) <strong>${firstName} ${lastName}</strong>,</h2>
-    <p style="font-size: 16px; color: #6d5b4c;">
-      Nous vous remercions d’avoir postulé pour rejoindre l’Orchestre Symphonique de Carthage (CSO).
+    <h2 style="font-size:22px;color:#4b2e2e;">
+      Cher(e) <strong>${firstName} ${lastName}</strong>,
+    </h2>
+    <p style="font-size:16px;color:#6d5b4c;">
+      Merci d’avoir participé à l’audition pour rejoindre l’Orchestre Symphonique de Carthage.
     </p>
   `;
 
   const bodyContent = `
-    <p>Après examen de votre demande, nous sommes au regret de vous informer que votre candidature a été <strong>refusée</strong>.</p>
+    <p>Après délibération, nous sommes au regret de vous informer que vous n'avez pas été retenu(e) pour cette session.</p>
 
-    <div style="background: #f9eae3; padding: 15px 20px; margin: 20px 0; border-left: 6px solid #c0392b; border-radius: 4px; color: #6d4c41;">
-      <strong>Raison :</strong> ${reason}
+    <div style="
+      background:#f9eae3;
+      padding:15px 20px;
+      margin:20px 0;
+      border-left:6px solid #c0392b;
+      border-radius:4px;
+      color:#6d4c41;
+    ">
+      <p><strong>Motif :</strong> ${reason}</p>
     </div>
 
-    <p>Nous vous remercions pour votre intérêt et vous souhaitons pleine réussite dans vos futurs projets artistiques.</p>
+    <p style="font-size:16px;color:#6d5b4c;">
+      Nous vous remercions sincèrement pour votre engagement et votre passion.
+      Nous espérons vous revoir lors de futures auditions.
+    </p>
   `;
 
   return {
@@ -164,7 +252,6 @@ export const createRejectionEmailTemplate = ({ firstName, lastName, reason }) =>
     attachments: COMMON_ATTACHMENTS,
   };
 };
-
 
 
 export const createLeaveAcceptedEmailTemplate = (leave) => {
@@ -274,29 +361,55 @@ export const createPupitreUpdatedEmailTemplate = (user) => {
 
 
 
-export const createTestDateEmailTemplate = ({ firstName, lastName, email, assignedDate }) => {
+export const createTestDateEmailTemplate = ({
+  firstName,
+  lastName,
+  email,
+  assignedDate,
+  assignedTime
+}) => {
   const subject = "Convocation au test – Orchestre CSO";
+
+  // Format date & time
   const formattedDate = new Date(assignedDate).toLocaleDateString("fr-FR", {
     weekday: "long", year: "numeric", month: "long", day: "numeric"
   });
+  const formattedTime = assignedTime; // already "HH:MM"
+
+  // Header greeting
   const headerContent = `
     <h2 style="font-size:22px;color:#4b2e2e;">
       Cher(e) <strong>${firstName} ${lastName}</strong>,
     </h2>
     <p style="font-size:16px;color:#6d5b4c;">
-      Votre test d’admission au CSO est programmé.
+      Votre test d’admission au CSO est programmé. Retrouvez ci-dessous vos informations de convocation :
     </p>
   `;
+
+  // Body with date + time
   const bodyContent = `
-    <p>Voici votre date de test :</p>
-    <div style="background:#f4f0ea;padding:18px;border-radius:6px;margin:25px 0;font-family:'Courier New',monospace;color:#3c2f2f;">
-      <p><strong>Date du test :</strong> ${formattedDate}</p>
+    <p><strong>Détails du test :</strong></p>
+    <div style="
+      background:#f4f0ea;
+      padding:18px;
+      border-radius:6px;
+      margin:20px 0;
+      font-family:'Courier New',monospace;
+      color:#3c2f2f;
+    ">
+      <p><strong>Date :</strong> ${formattedDate}</p>
+      <p><strong>Heure :</strong> ${formattedTime}</p>
     </div>
-    <p>Présentez-vous 15 minutes avant. Toute absence non justifiée pourra entraîner la suppression de votre candidature.</p>
+    <p>
+      Merci de vous présenter **15 minutes avant** le début.  
+      Toute absence non justifiée peut entraîner le retrait de votre candidature.
+    </p>
   `;
+
   return {
     subject,
     htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
-    attachments: COMMON_ATTACHMENTS,
+    attachments: COMMON_ATTACHMENTS
   };
 };
+
