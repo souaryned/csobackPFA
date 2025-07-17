@@ -13,7 +13,6 @@ import {
   getAcceptedMemberships,
   updatePupitre,
   getActiveChoristes,
-  sendTestDates,
   acceptMembership,
   // eliminateUser
 } from '../../controllers/admin/userController.js';
@@ -38,7 +37,6 @@ router.put("/refuse/:id", isAdmin,refuseMembership);
 router.get('/accepted-memberships', isAdminOrChef,getAcceptedMemberships);
 router.put('/:userId/voc-pupitre', isManager, updatePupitre);
 router.get('/active', isManager,getActiveChoristes);
-router.post("/send-test-dates", sendTestDates);
 
 
 export default router;

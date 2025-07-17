@@ -5,7 +5,6 @@ import {
   createAccountEmailTemplate,
   createPupitreUpdatedEmailTemplate,
   createRejectionEmailTemplate,
-  createTestDateEmailTemplate,
 } from "../../tools/mail/notifTemplate.js";
 
 // Utility: Generate a secure random password
@@ -455,48 +454,7 @@ export const getAcceptedMemberships = async (req, res) => {
   }
 };
 
-export const sendTestDates = async (req, res) => {
-  try {
-    const { startDate, endDate } = req.body;
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const datesArray = [];
-    const current = new Date(start);
-    while (current <= end) {
-      datesArray.push(new Date(current));
-      current.setDate(current.getDate() + 1);
-    }
-    const candidates = await User.find({
-      role: "candidate",
-      memberstatus: "Pending",
-    });
-    for (const candidate of candidates) {
-      const idx = Math.floor(Math.random() * datesArray.length);
-      const assignedDate = datesArray[idx];
-      candidate.testDate = assignedDate;
-      candidate.memberstatus = "TestScheduled";
-      await candidate.save();
-      const emailData = createTestDateEmailTemplate({
-        firstName: candidate.firstName,
-        lastName: candidate.lastName,
-        email: candidate.email,
-        assignedDate,
-      });
-      await sendNotification({
-        email: candidate.email,
-        subject: emailData.subject,
-        htmlContent: emailData.htmlContent,
-        attachments: emailData.attachments,
-      });
-    }
-    return res.status(200).json({ message: "Dates de test envoyées." });
-  } catch (error) {
-    console.error(error);
-    return res
-      .status(500)
-      .json({ message: "Erreur lors de l’envoi des dates." });
-  }
-};
+
 
 export const updatePupitre = async (req, res) => {
   const { userId } = req.params;

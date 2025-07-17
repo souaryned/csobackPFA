@@ -117,7 +117,8 @@ export const applyForMembership = async (req, res) => {
     gender,
     birthDate,
     nationality,
-    cin,
+    identityType,
+    identityNumber,
     height,
     hasMusicalKnowledge,
     musicalExperience,
@@ -125,6 +126,9 @@ export const applyForMembership = async (req, res) => {
     otherChoir,
     professionalSituation,
     phone,
+    phoneCountryCode,
+    isSponsored,
+    sponsorName,
     motivation,
   } = req.body;
 
@@ -135,14 +139,24 @@ export const applyForMembership = async (req, res) => {
     // 2. If no user was found with the confirmed email
     if (!userByEmail) {
       return res.status(400).json({
-        message: "Email non confirmé ou inexistant. Veuillez d’abord confirmer votre email.",
+        message: "Email non confirmé ou inexistant. Veuillez d'abord confirmer votre email.",
       });
     }
 
-    // 3. Check if CIN is already used by another user (not this one)
-    const userByCin = await User.findOne({ cin });
-    if (userByCin && userByCin._id.toString() !== userByEmail._id.toString()) {
-      return res.status(400).json({ message: "Ce CIN est déjà utilisé par un autre utilisateur." });
+    // 3. Check if identity number is already used by another user (not this one)
+    // Check both new identityNumber field and old cin field for compatibility
+    const userByIdentity = await User.findOne({ 
+      $or: [
+        { identityNumber }, 
+        { cin: identityNumber }
+      ],
+      _id: { $ne: userByEmail._id } // Exclude current user
+    });
+
+    if (userByIdentity) {
+      return res.status(400).json({ 
+        message: `Le numéro de ${identityType} que vous avez introduit existe. Vous avez donc déjà postulé au choeur du CSO, nous vous contacterons bientôt` 
+      });
     }
 
     // 4. Update the existing user's information
@@ -151,14 +165,26 @@ export const applyForMembership = async (req, res) => {
     userByEmail.gender = gender;
     userByEmail.birthDate = birthDate;
     userByEmail.nationality = nationality;
-    userByEmail.cin = cin;
+    userByEmail.identityType = identityType;
+    userByEmail.identityNumber = identityNumber;
     userByEmail.height = height;
-    userByEmail.hasMusicalKnowledge = hasMusicalKnowledge;
-    userByEmail.musicalExperience = musicalExperience || "";
-    userByEmail.isActiveInOtherChoir = isActiveInOtherChoir;
-    userByEmail.otherChoir = otherChoir || "";
+    
+    // Convert radio button values to boolean for musical knowledge
+    userByEmail.hasMusicalKnowledge = hasMusicalKnowledge === 'oui';
+    userByEmail.musicalExperience = hasMusicalKnowledge === 'oui' ? (musicalExperience || "") : "";
+    
+    // Convert radio button values to boolean for other choir
+    userByEmail.isActiveInOtherChoir = isActiveInOtherChoir === 'oui';
+    userByEmail.otherChoir = isActiveInOtherChoir === 'oui' ? (otherChoir || "") : "";
+    
     userByEmail.professionalSituation = professionalSituation || "";
     userByEmail.phone = phone || "";
+    userByEmail.phoneCountryCode = phoneCountryCode || "";
+    
+    // Convert radio button values to boolean for sponsorship
+    userByEmail.isSponsored = isSponsored === 'oui';
+    userByEmail.sponsorName = isSponsored === 'oui' ? (sponsorName || "") : "";
+    
     userByEmail.motivation = motivation;
     userByEmail.status = "Inactif";
     userByEmail.role = "candidate";
@@ -166,14 +192,20 @@ export const applyForMembership = async (req, res) => {
     userByEmail.isLocked = true;
     userByEmail.testDate = null;
 
+    // Remove old cin field if it exists (migration)
+    // if (userByEmail.cin) {
+    //   userByEmail.cin = undefined;
+    // }
+
     await userByEmail.save();
 
+  
     return res.status(200).json({ message: "Candidature soumise avec succès." });
   } catch (error) {
+    console.error("Error in applyForMembership:", error);
     return res.status(500).json({ message: "Erreur serveur." });
   }
 };
-
 
 export const sendEmailConfirmation = async (req, res) => {
   const { email } = req.body;
@@ -188,7 +220,7 @@ export const sendEmailConfirmation = async (req, res) => {
     // ❌ Email already in use
     if (existingUser) {
       return res.status(400).json({
-        message: "Email déjà utilisé. Veuillez choisir un autre.",
+        message: "Vous avez déjà postulé au choeur du CSO, nous vous contacterons bientôt",
       });
     }
 
