@@ -325,7 +325,10 @@ export const getMembershipSubmissions = async (req, res) => {
         hasMusicalKnowledge: 1,
         musicalExperience: 1,
         otherChoir: 1,
-        testDate: 1      // ← include the assigned test date
+        testDate: 1,      // ← include the assigned test date
+        sponsorName:1,
+        isSponsored:1,
+        phoneCountryCode:1
       }
     );
 
