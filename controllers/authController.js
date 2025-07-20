@@ -143,8 +143,26 @@ export const applyForMembership = async (req, res) => {
       });
     }
 
+    // ✅ ADD: Check if user already has a pending/active application
+    if (userByEmail.memberstatus === "Pending") {
+      return res.status(409).json({
+        message: "Votre candidature a déjà été soumise et est en cours de traitement."
+      });
+    }
+
+    if (userByEmail.memberstatus === "TestScheduled") {
+      return res.status(409).json({
+        message: "Votre test d'audition a été programmé. Consultez vos emails."
+      });
+    }
+
+    if (userByEmail.memberstatus === "Accepted") {
+      return res.status(409).json({
+        message: "Vous êtes déjà membre du CSO."
+      });
+    }
+
     // 3. Check if identity number is already used by another user (not this one)
-    // Check both new identityNumber field and old cin field for compatibility
     const userByIdentity = await User.findOne({ 
       $or: [
         { identityNumber }, 
@@ -192,13 +210,10 @@ export const applyForMembership = async (req, res) => {
     userByEmail.isLocked = true;
     userByEmail.testDate = null;
 
-    // Remove old cin field if it exists (migration)
-    // if (userByEmail.cin) {
-    //   userByEmail.cin = undefined;
-    // }
+    // ✅ ADD: Reset canReapply to false when submitting new application
+    userByEmail.canReapply = false;
 
     await userByEmail.save();
-
   
     return res.status(200).json({ message: "Candidature soumise avec succès." });
   } catch (error) {
@@ -217,14 +232,78 @@ export const sendEmailConfirmation = async (req, res) => {
   try {
     const existingUser = await User.findOne({ email });
 
-    // ❌ Email already in use
+    // ✅ REPLACE the simple block with status checking
     if (existingUser) {
-      return res.status(400).json({
+      // Check different memberStatus and handle accordingly
+      if (existingUser.memberstatus === "Pending") {
+        return res.status(409).json({
+          message: "Votre candidature a déjà été enregistrée et est en cours de traitement.",
+        });
+      }
+      
+      if (existingUser.memberstatus === "TestScheduled") {
+        return res.status(409).json({
+          message: "Votre test d'audition a été programmé. Consultez vos emails.",
+        });
+      }
+      
+      if (existingUser.memberstatus === "Accepted") {
+        return res.status(409).json({
+          message: "Vous êtes déjà membre du CSO.",
+        });
+      }
+      
+      // ✅ Allow refused users to get new confirmation email
+      if (existingUser.memberstatus === "Refused" || existingUser.canReapply) {
+        const token = crypto.randomBytes(32).toString("hex");
+        const expires = new Date(Date.now() + 60 * 60 * 1000);
+
+        existingUser.emailConfirmationToken = token;
+        existingUser.emailConfirmationTokenExpires = expires;
+        existingUser.emailConfirmed = false; // Reset confirmation
+        await existingUser.save();
+
+        const confirmLink = `http://localhost:3000/confirm-email?token=${token}`;
+        
+        // Send email (use your existing email template)
+        const htmlContent = generateEmailTemplate(
+          "Nouvelle candidature - Confirmez votre email",
+          `<p style="font-size: 18px; font-weight: 500;">Nouvelle candidature au CSO 🎶</p>`,
+          `
+            <p>Nous avons bien reçu votre nouvelle demande avec l'email <strong>${email}</strong>.</p>
+            <p>Pour poursuivre votre candidature, cliquez sur le lien ci-dessous :</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${confirmLink}" style="background: #5a3e2b; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+                Confirmer mon email
+              </a>
+            </div>
+            <p>Ce lien est valable pendant <strong>1 heure</strong>.</p>
+          `
+        );
+
+        await sendNotification({
+          email: existingUser.email,
+          subject: "Nouvelle candidature - Confirmez votre email",
+          htmlContent,
+          attachments: [
+            {
+              filename: "music.png",
+              path: "./tools/assets/images/music.png",
+              cid: "logo", 
+            },
+          ],
+        });
+
+        return res.status(200).json({ message: "Email de confirmation envoyé pour votre nouvelle candidature." });
+      }
+      
+      // ✅ Default case for existing users with no clear status
+      return res.status(409).json({
         message: "Vous avez déjà postulé au choeur du CSO, nous vous contacterons bientôt",
       });
     }
 
-    // ✅ Create temporary user for confirmation process
+    // ✅ NEW USER - Create them normally (unchanged)
     const user = await User.create({
       email,
       firstName: "En attente",
@@ -235,7 +314,7 @@ export const sendEmailConfirmation = async (req, res) => {
     });
 
     const token = crypto.randomBytes(32).toString("hex");
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const expires = new Date(Date.now() + 60 * 60 * 1000);
 
     user.emailConfirmationToken = token;
     user.emailConfirmationTokenExpires = expires;
@@ -243,7 +322,6 @@ export const sendEmailConfirmation = async (req, res) => {
 
     const confirmLink = `http://localhost:3000/confirm-email?token=${token}`;
 
-    // 🔥 Use the styled template here
     const htmlContent = generateEmailTemplate(
       "Confirmez votre adresse email",
       `<p style="font-size: 18px; font-weight: 500;">Bienvenue dans le processus de candidature au CSO 🎶</p>`,
@@ -275,6 +353,7 @@ export const sendEmailConfirmation = async (req, res) => {
 
     res.status(200).json({ message: "Email de confirmation envoyé." });
   } catch (error) {
+    console.error("Error in sendEmailConfirmation:", error);
     res.status(500).json({ message: "Erreur serveur." });
   }
 };
@@ -284,8 +363,48 @@ export const checkEmailConfirmed = async (req, res) => {
   const { email } = req.query;
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(404).json({ emailConfirmed: false });
+    
+    if (!user) {
+      return res.status(404).json({ emailConfirmed: false });
+    }
+    
+    // ✅ ADD: Check memberStatus and provide appropriate responses
+    if (user.memberstatus === "Pending") {
+      return res.status(409).json({ 
+        emailConfirmed: false,
+        message: "Votre candidature a déjà été enregistrée et est en cours de traitement.",
+        applicationStatus: "Pending"
+      });
+    }
+    
+    if (user.memberstatus === "TestScheduled") {
+      return res.status(409).json({ 
+        emailConfirmed: false,
+        message: "Votre test d'audition a été programmé. Consultez vos emails.",
+        applicationStatus: "TestScheduled"
+      });
+    }
+    
+    if (user.memberstatus === "Accepted") {
+      return res.status(409).json({ 
+        emailConfirmed: false,
+        message: "Vous êtes déjà membre du CSO.",
+        applicationStatus: "Accepted"
+      });
+    }
+    
+    if (user.memberstatus === "Refused") {
+      return res.status(409).json({ 
+        emailConfirmed: false,
+        message: "Votre candidature précédente n'a pas été retenue. Vous pouvez soumettre une nouvelle candidature.",
+        applicationStatus: "Refused",
+        canReapply: true
+      });
+    }
+    
+    // ✅ Normal case - return confirmation status
     return res.json({ emailConfirmed: user.emailConfirmed || false });
+    
   } catch (err) {
     return res.status(500).json({ message: "Erreur serveur" });
   }

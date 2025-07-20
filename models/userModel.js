@@ -14,18 +14,18 @@ const userSchema = new mongoose.Schema({
   },
   birthDate: {
     type: String,
-    required:false,
+    required: false,
   },
   nationality: {
     type: String, // Will now be country from dropdown
-    required:false,
+    required: false,
   },
 
   // NEW: Change CIN to identity document type
   identityType: {
     type: String,
     enum: ["CIN", "Passeport"],
-    required:false
+    required: false
   },
   
   // UPDATED: Identity number (CIN or Passport)
@@ -33,28 +33,28 @@ const userSchema = new mongoose.Schema({
     type: String,
     unique: true,
     sparse: true,
-  requred:false
+    required: false  // Fixed typo: was "requred"
   },
 
   height: {
     type: Number,
-    required:false,
+    required: false,
   },
 
   // NEW: Sponsorship fields
   isSponsored: {
     type: Boolean,
-  required:false
+    required: false
   },
   sponsorName: {
     type: String, // Sponsor's full name
-    required:false
+    required: false
   },
 
   // MOVED to Step 3: Musical knowledge
   hasMusicalKnowledge: {
     type: Boolean,
-  required: false,
+    required: false,
   },
   musicalExperience: {
     type: String,
@@ -122,6 +122,13 @@ const userSchema = new mongoose.Schema({
   memberstatus: {
     type: String,
     enum: ["Pending", "TestScheduled", "Accepted", "Refused"],
+    required: false
+  },
+  
+  // ✅ ADD THIS: canReapply field
+  canReapply: {
+    type: Boolean,
+    default: false,
     required: false
   },
   

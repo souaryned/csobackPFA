@@ -364,48 +364,52 @@ export const createPupitreUpdatedEmailTemplate = (user) => {
 export const createTestDateEmailTemplate = ({
   firstName,
   lastName,
-  email,
   assignedDate,
-  assignedTime
+  assignedTime,
+  debutPause,  // Add pause start
+  finPause     // Add pause end
 }) => {
-  const subject = "Convocation au test – Orchestre CSO";
+  const subject = "Convocation au test d'admission – Orchestre CSO";
 
   // Format date & time
   const formattedDate = new Date(assignedDate).toLocaleDateString("fr-FR", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric"
+    weekday: "long", 
+    year: "numeric", 
+    month: "long", 
+    day: "numeric"
   });
-  const formattedTime = assignedTime; // already "HH:MM"
 
   // Header greeting
   const headerContent = `
-    <h2 style="font-size:22px;color:#4b2e2e;">
+    <h2 style="font-size:22px;color:#4b2e2e;margin-bottom:10px;">
       Cher(e) <strong>${firstName} ${lastName}</strong>,
     </h2>
-    <p style="font-size:16px;color:#6d5b4c;">
-      Votre test d’admission au CSO est programmé. Retrouvez ci-dessous vos informations de convocation :
+    <p style="font-size:16px;color:#6d5b4c;margin-bottom:25px;">
+      Félicitations ! Votre candidature a été retenue pour l'étape suivante. 
+      Votre test d'admission au CSO est maintenant programmé.
     </p>
   `;
 
-  // Body with date + time
+  // Main audition details
   const bodyContent = `
-    <p><strong>Détails du test :</strong></p>
     <div style="
-      background:#f4f0ea;
-      padding:18px;
-      border-radius:6px;
-      margin:20px 0;
-      font-family:'Courier New',monospace;
-      color:#3c2f2f;
+      background:#f8f6f3;
+      padding:25px;
+      border-radius:8px;
+      margin:25px 0;
+      border-left:4px solid #d4a574;
     ">
-      <p><strong>Date :</strong> ${formattedDate}</p>
-      <p><strong>Heure :</strong> ${formattedTime}</p>
+      <h3 style="color:#4b2e2e;margin-top:0;font-size:18px;">Détails de votre convocation</h3>
+      
+      <div style="background:white;padding:20px;border-radius:6px;margin:15px 0;">
+        <p style="margin:8px 0;"><strong>Date :</strong> ${formattedDate}</p>
+        <p style="margin:8px 0;"><strong>Heure d'arrivée :</strong> ${assignedTime} (soyez présent 15 minutes avant)</p>
+        ${debutPause && finPause ? `
+        <p style="margin:8px 0;color:#d9534f;"><strong>Pause prévue :</strong> ${debutPause} - ${finPause}</p>
+        ` : ''}
+      </div>
     </div>
-    <p>
-      Merci de vous présenter **15 minutes avant** le début.  
-      Toute absence non justifiée peut entraîner le retrait de votre candidature.
-    </p>
   `;
-
   return {
     subject,
     htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),

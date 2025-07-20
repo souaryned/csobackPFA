@@ -14,11 +14,11 @@ import { generateAuditions } from "../../controllers/admin/auditionController.js
 const router = express.Router();
 
 router.use(loggedMiddleware, isAdmin);
-router.post("/parameters", isAdmin, saveAuditionParams);
-router.get("/parameters", isAdmin, listAuditionParams);
-router.get("/parameters/:id", isAdmin, getAuditionParamsById);
-router.put("/parameters/:id", isAdmin, updateAuditionParams);
-router.delete("/parameters/:id", isAdmin, deleteAuditionParams);
+router.post("/parameters",  saveAuditionParams);
+router.get("/parameters", listAuditionParams);
+router.get("/parameters/:id", getAuditionParamsById);
+router.put("/parameters/:id", updateAuditionParams);
+router.delete("/parameters/:id",  deleteAuditionParams);
 
 // Generate & notify
 router.post("/generate",generateAuditions);
