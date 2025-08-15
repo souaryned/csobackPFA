@@ -124,6 +124,15 @@ const userSchema = new mongoose.Schema({
     enum: ["Pending", "TestScheduled", "Accepted", "Refused"],
     required: false
   },
+
+ isAuditioned: {
+    type: Boolean,
+    default: false
+  },
+  auditionnedAt: {
+    type: Date,
+    default: null
+  },
   
   // ✅ ADD THIS: canReapply field
   canReapply: {
@@ -185,6 +194,43 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  convocationStatus: {
+    type: String,
+    enum: ["Sent", "Confirmed", "Declined", "RescheduleRequested","RescheduledSameDay"],
+    required: false
+  },
+
+  // 🎯 NEW: Convocation response deadline (48 hours from email sent)
+  convocationDeadline: {
+    type: Date,
+    required: false
+  },
+
+  // 🎯 NEW: When candidate responded to convocation
+  convocationResponseDate: {
+    type: Date,
+    required: false
+  },
+  convocationStatus: {
+  type: String,
+  enum: ["Sent", "Confirmed", "Declined", "RescheduleRequested", "RescheduledSameDay"],
+  default: "Sent",
+  required: true
+},
+
+// Add this field for same-day reschedule requests
+requestedNewTime: { 
+  type: String, 
+  required: false 
+},
+// Add to User model
+reminderSent: {
+  type: Boolean,
+  default: false
+},
+reminderSentDate: {
+  type: Date
+}
 });
 
 export default mongoose.model("User", userSchema);

@@ -61,6 +61,14 @@ export const isAdminOrChef = (req, res, next) => {
   next();
 };
 
+export const isManagerOrChef = (req, res, next) => {
+  const { role } = req.auth;
+  if (role !== "manager" && role !== "chef de choeur") {
+    return res.status(403).json({ error: "Accès refusé. Manager ou chef uniquement." });
+  }
+  next();
+};
+
 
 // 📌 Allow all internal roles (admin, manager, choriste)
 export const isInternal = (req, res, next) => {
@@ -80,3 +88,15 @@ export const allowAll = (req, res, next) => {
   }
   next();
 };
+
+// 📌 Allow all external roles (candidate)
+export const isExternal = (req, res, next) => {
+  const { role } = req.auth;
+  
+  // 🎯 FIX: Check if role is NOT candidate
+  if (role !== "candidate") {
+    return res.status(403).json({ error: "Accès refusé. Membres externes uniquement." });
+  }
+  
+  next();
+}

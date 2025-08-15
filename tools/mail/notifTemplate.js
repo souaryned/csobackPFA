@@ -360,14 +360,14 @@ export const createPupitreUpdatedEmailTemplate = (user) => {
 };
 
 
-
 export const createTestDateEmailTemplate = ({
   firstName,
   lastName,
+  candidateId,
   assignedDate,
   assignedTime,
-  debutPause,  // Add pause start
-  finPause     // Add pause end
+  debutPause,
+  finPause
 }) => {
   const subject = "Convocation au test d'admission – Orchestre CSO";
 
@@ -378,6 +378,9 @@ export const createTestDateEmailTemplate = ({
     month: "long", 
     day: "numeric"
   });
+
+  // 🎯 Create response URL
+  const responseUrl = `${FRONTEND_URL}/convocation/response/${candidateId}`;
 
   // Header greeting
   const headerContent = `
@@ -390,7 +393,7 @@ export const createTestDateEmailTemplate = ({
     </p>
   `;
 
-  // Main audition details
+  // 🔧 UPDATED: Main audition details with friendly response invitation
   const bodyContent = `
     <div style="
       background:#f8f6f3;
@@ -409,7 +412,48 @@ export const createTestDateEmailTemplate = ({
         ` : ''}
       </div>
     </div>
+
+    <!-- 🔧 UPDATED: Friendly response invitation (no deadline pressure) -->
+    <div style="text-align:center;margin:40px 0;padding:30px;background:#e8f5e8;border-radius:8px;">
+      <h3 style="color:#2d5a2d;margin-bottom:15px;font-size:20px;">💚 MERCI DE CONFIRMER VOTRE PRÉSENCE</h3>
+      <p style="color:#2d5a2d;margin-bottom:25px;font-size:16px;">
+        Nous aimerions connaître votre disponibilité pour mieux organiser la session
+      </p>
+      
+      <a href="${responseUrl}" style="
+        display:inline-block;
+        background:#28a745;
+        color:white;
+        padding:15px 30px;
+        text-decoration:none;
+        border-radius:8px;
+        font-weight:bold;
+        font-size:16px;
+        margin:10px;
+        transition:background 0.3s ease;
+      ">Répondre à la convocation</a>
+      
+      <p style="color:#2d5a2d;margin-top:15px;font-size:14px;font-weight:500;">
+        📧 Nous vous enverrons un rappel si nécessaire
+      </p>
+    </div>
+
+    <!-- ✅ KEEP AS IS: Original "Ce que vous devez faire" section -->
+    <div style="background:#e7f3ff;padding:20px;border-radius:6px;margin:20px 0;">
+      <h4 style="color:#0c5460;margin-top:0;">📋 Ce que vous devez faire :</h4>
+      <ol style="color:#333;line-height:1.6;">
+        <li><strong>Cliquez sur le bouton de confirmation</strong> ci-dessus</li>
+        <li><strong>Choisissez votre réponse :</strong>
+          <ul>
+            <li>✅ Confirmer votre présence</li>
+            <li>🔄 Demander un autre créneau</li>
+            <li>❌ Décliner (suppression définitive)</li>
+          </ul>
+        </li>
+      </ol>
+    </div>
   `;
+
   return {
     subject,
     htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
@@ -417,3 +461,227 @@ export const createTestDateEmailTemplate = ({
   };
 };
 
+
+
+// Add this to your email templates file
+export const createTimeUpdateEmailTemplate = ({
+  firstName,
+  lastName,
+  candidateId,
+  newDate,
+  newStartTime,
+  newEndTime,
+  debutPause,
+  finPause
+}) => {
+  const subject = "Nouveau créneau confirmé – Orchestre CSO";
+
+  // Format date & time
+  const formattedDate = new Date(newDate).toLocaleDateString("fr-FR", {
+    weekday: "long", 
+    year: "numeric", 
+    month: "long", 
+    day: "numeric"
+  });
+
+  // Header greeting
+  const headerContent = `
+    <h2 style="font-size:22px;color:#4b2e2e;margin-bottom:10px;">
+      Cher(e) <strong>${firstName} ${lastName}</strong>,
+    </h2>
+    <p style="font-size:16px;color:#6d5b4c;margin-bottom:25px;">
+      Bonne nouvelle ! Votre demande de changement de créneau a été approuvée.
+    </p>
+  `;
+
+  // Main content with new time details
+  const bodyContent = `
+    <div style="
+      background:#d4edda;
+      padding:25px;
+      border-radius:8px;
+      margin:25px 0;
+      border-left:4px solid #28a745;
+    ">
+      <h3 style="color:#155724;margin-top:0;font-size:18px;">✅ Nouveau créneau confirmé</h3>
+      
+      <div style="background:white;padding:20px;border-radius:6px;margin:15px 0;">
+        <p style="margin:8px 0;"><strong>Date :</strong> ${formattedDate}</p>
+        <p style="margin:8px 0;"><strong>Nouveau créneau :</strong> ${newStartTime} - ${newEndTime} (soyez présent 15 minutes avant)</p>
+        <p style="margin:8px 0;color:#28a745;font-weight:600;">
+          <strong>Statut :</strong> Confirmé ✅
+        </p>
+        ${debutPause && finPause ? `
+        <p style="margin:8px 0;color:#d9534f;"><strong>Pause prévue :</strong> ${debutPause} - ${finPause}</p>
+        ` : ''}
+      </div>
+    </div>
+
+  
+
+    <div style="text-align:center;margin:30px 0;padding:20px;background:#f8f9fa;border-radius:8px;">
+      <p style="color:#6c757d;margin:0;font-size:14px;">
+        Votre présence est maintenant confirmée pour ce nouveau créneau.<br/>
+        Nous avons hâte de vous entendre !
+      </p>
+    </div>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS
+  };
+};
+
+// Add this to your email templates file
+export const createRescheduleRejectionEmailTemplate = ({
+  firstName,
+  lastName,
+  reason
+}) => {
+  const subject = "Mise à jour de votre demande – Orchestre CSO";
+
+  // Header greeting
+  const headerContent = `
+    <h2 style="font-size:22px;color:#4b2e2e;margin-bottom:10px;">
+      Cher(e) <strong>${firstName} ${lastName}</strong>,
+    </h2>
+    <p style="font-size:16px;color:#6d5b4c;margin-bottom:25px;">
+      Nous vous remercions pour votre demande de changement de créneau.
+    </p>
+  `;
+
+  // Main content with rejection info
+  const bodyContent = `
+    <div style="
+      background:#fff3cd;
+      padding:25px;
+      border-radius:8px;
+      margin:25px 0;
+      border-left:4px solid #ffc107;
+    ">
+      <h3 style="color:#856404;margin-top:0;font-size:18px;">⏳ Demande en attente</h3>
+      
+      <div style="background:white;padding:20px;border-radius:6px;margin:15px 0;">
+        <p style="margin:8px 0;">
+          <strong>Statut :</strong> 
+          <span style="color:#ffc107;font-weight:600;">En liste d'attente</span>
+        </p>
+        ${reason ? `
+        <p style="margin:8px 0;">
+          <strong>Motif :</strong> ${reason}
+        </p>
+        ` : ''}
+      </div>
+    </div>
+
+    <div style="background:#e7f3ff;padding:20px;border-radius:6px;margin:20px 0;">
+      <h4 style="color:#0c5460;margin-top:0;">📋 Prochaines étapes :</h4>
+      <ul style="color:#333;line-height:1.6;">
+        <li><strong>Votre candidature reste active</strong> dans notre système</li>
+        <li><strong>Vous êtes maintenant en liste d'attente</strong> pour un nouveau jour d'audition</li>
+        <li><strong>Nous vous contacterons</strong> dès qu'un nouveau créneau sera disponible</li>
+        <li><strong>Aucune action requise</strong> de votre part pour le moment</li>
+      </ul>
+    </div>
+
+    <div style="text-align:center;margin:30px 0;padding:20px;background:#f8f9fa;border-radius:8px;">
+      <p style="color:#6c757d;margin:0;font-size:14px;">
+        Merci pour votre patience et votre compréhension.<br/>
+        L'équipe administrative vous contactera prochainement.
+      </p>
+    </div>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS
+  };
+};
+
+
+export const createReminderEmailTemplate = ({
+  firstName,
+  lastName,
+  candidateId,
+  assignedDate,
+  assignedTime,
+  assignedEndTime
+}) => {
+  const subject = "⏰ Rappel - Répondez à votre convocation d'audition – CSO";
+
+  const formattedDate = new Date(assignedDate).toLocaleDateString("fr-FR", {
+    weekday: "long", 
+    year: "numeric", 
+    month: "long", 
+    day: "numeric"
+  });
+
+  const responseUrl = `${FRONTEND_URL}/convocation/response/${candidateId}`;
+
+  const headerContent = `
+    <h2 style="font-size:22px;color:#f59e0b;margin-bottom:10px;">
+      ⏰ <strong>Rappel Important - ${firstName} ${lastName}</strong>
+    </h2>
+    <p style="font-size:16px;color:#6d5b4c;margin-bottom:25px;">
+      Nous n'avons pas encore reçu votre réponse concernant votre convocation d'audition.
+    </p>
+  `;
+
+  const bodyContent = `
+    <div style="
+      background:#fff3cd;
+      padding:25px;
+      border-radius:8px;
+      margin:25px 0;
+      border-left:4px solid #ffc107;
+    ">
+      <h3 style="color:#856404;margin-top:0;font-size:18px;">🎵 Votre audition est programmée</h3>
+      
+      <div style="background:white;padding:20px;border-radius:6px;margin:15px 0;">
+        <p style="margin:8px 0;"><strong>Date :</strong> ${formattedDate}</p>
+        <p style="margin:8px 0;"><strong>Heure :</strong> ${assignedTime} - ${assignedEndTime}</p>
+      </div>
+    </div>
+
+    <div style="text-align:center;margin:40px 0;padding:30px;background:#f8d7da;border-radius:8px;">
+      <h3 style="color:#721c24;margin-bottom:15px;font-size:20px;">⚠️ ACTION REQUISE</h3>
+      <p style="color:#721c24;margin-bottom:25px;font-size:16px;">
+        Veuillez répondre à cette convocation dès maintenant
+      </p>
+      
+      <a href="${responseUrl}" style="
+        display:inline-block;
+        background:#28a745;
+        color:white;
+        padding:15px 30px;
+        text-decoration:none;
+        border-radius:8px;
+        font-weight:bold;
+        font-size:16px;
+        margin:10px;
+      ">Répondre Maintenant</a>
+      
+      <p style="color:#dc3545;margin-top:15px;font-size:14px;font-weight:bold;">
+        ⚠️ Si vous ne répondez pas avant le jour de l'audition, vous serez automatiquement remis en liste d'attente.
+      </p>
+    </div>
+
+    <div style="background:#e7f3ff;padding:20px;border-radius:6px;margin:20px 0;">
+      <h4 style="color:#0c5460;margin-top:0;">📋 Vos options :</h4>
+      <ul style="color:#333;line-height:1.6;">
+        <li>✅ <strong>Confirmer</strong> votre présence</li>
+        <li>🔄 <strong>Demander</strong> un autre créneau</li>
+        <li>❌ <strong>Décliner</strong> (suppression définitive)</li>
+      </ul>
+    </div>
+  `;
+
+  return {
+    subject,
+    htmlContent: generateEmailTemplate(subject, headerContent, bodyContent),
+    attachments: COMMON_ATTACHMENTS
+  };
+};

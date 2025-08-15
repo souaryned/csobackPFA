@@ -18,6 +18,11 @@ const AuditionSlotSchema = new mongoose.Schema({
     ref: "User",
     required: true
   },
+   paramId: {  // ← ADD THIS
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "AuditionParams",
+    required: true
+  },
   status: {
     type: String,
     enum: ["Scheduled", "Confirmed", "Absent", "Rejected"],

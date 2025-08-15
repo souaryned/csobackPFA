@@ -1,36 +1,29 @@
 import nodemailer from "nodemailer";
+import { SMTP_CONFIG } from "../../config.js";
 
-export const sendNotification = async ({
-  email,
-  subject,
-  htmlContent,
-  attachments,
-}) => {
+export const sendNotification = async ({ email, subject, htmlContent, attachments }) => {
   try {
     const transporter = nodemailer.createTransport({
-      service: "gmail",
-      port: "587",
+      host: SMTP_CONFIG.host,
+      port: SMTP_CONFIG.port,
+      secure: false, // false for STARTTLS
       auth: {
-        user: "azizhasnaoui000@gmail.com",
-        pass: "etpdmcjoxdecskrf",
-      }
-      ,
-      tls: {
-        rejectUnauthorized: false
-      }
+        user: SMTP_CONFIG.user,
+        pass: SMTP_CONFIG.pass,
+      },
+      tls: { rejectUnauthorized: false }, // optional
     });
 
     const mailOptions = {
-      from: "azizhasnaoui000@gmail.com",
+      from: SMTP_CONFIG.user,
       to: email,
-      subject: subject,
+      subject,
       html: htmlContent,
       attachments: attachments || [],
     };
 
     await transporter.sendMail(mailOptions);
-
-    // console.log(`Notification sent to ${email}`);
+    console.log(`Notification sent to ${email}`);
   } catch (error) {
     console.error(`Error sending notification to ${email}:`, error);
   }

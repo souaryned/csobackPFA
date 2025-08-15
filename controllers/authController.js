@@ -1,7 +1,7 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import User from "../models/userModel.js";
-import { JWT_SECRET } from "../config.js";
+import { JWT_SECRET, FRONTEND_URL } from "../config.js";
 import crypto from "crypto";
 import { sendNotification } from "../tools/mail/mailNotif.js";
 import { generateEmailTemplate } from "../tools/mail/notifTemplate.js"; // Adjust path if needed
@@ -139,41 +139,40 @@ export const applyForMembership = async (req, res) => {
     // 2. If no user was found with the confirmed email
     if (!userByEmail) {
       return res.status(400).json({
-        message: "Email non confirmé ou inexistant. Veuillez d'abord confirmer votre email.",
+        message:
+          "Email non confirmé ou inexistant. Veuillez d'abord confirmer votre email.",
       });
     }
 
     // ✅ ADD: Check if user already has a pending/active application
     if (userByEmail.memberstatus === "Pending") {
       return res.status(409).json({
-        message: "Votre candidature a déjà été soumise et est en cours de traitement."
+        message:
+          "Votre candidature a déjà été soumise et est en cours de traitement.",
       });
     }
 
     if (userByEmail.memberstatus === "TestScheduled") {
       return res.status(409).json({
-        message: "Votre test d'audition a été programmé. Consultez vos emails."
+        message: "Votre test d'audition a été programmé. Consultez vos emails.",
       });
     }
 
     if (userByEmail.memberstatus === "Accepted") {
       return res.status(409).json({
-        message: "Vous êtes déjà membre du CSO."
+        message: "Vous êtes déjà membre du CSO.",
       });
     }
 
     // 3. Check if identity number is already used by another user (not this one)
-    const userByIdentity = await User.findOne({ 
-      $or: [
-        { identityNumber }, 
-        { cin: identityNumber }
-      ],
-      _id: { $ne: userByEmail._id } // Exclude current user
+    const userByIdentity = await User.findOne({
+      $or: [{ identityNumber }, { cin: identityNumber }],
+      _id: { $ne: userByEmail._id }, // Exclude current user
     });
 
     if (userByIdentity) {
-      return res.status(400).json({ 
-        message: `Le numéro de ${identityType} que vous avez introduit existe. Vous avez donc déjà postulé au choeur du CSO, nous vous contacterons bientôt` 
+      return res.status(400).json({
+        message: `Le numéro de ${identityType} que vous avez introduit existe. Vous avez donc déjà postulé au choeur du CSO, nous vous contacterons bientôt`,
       });
     }
 
@@ -186,23 +185,25 @@ export const applyForMembership = async (req, res) => {
     userByEmail.identityType = identityType;
     userByEmail.identityNumber = identityNumber;
     userByEmail.height = height;
-    
+
     // Convert radio button values to boolean for musical knowledge
-    userByEmail.hasMusicalKnowledge = hasMusicalKnowledge === 'oui';
-    userByEmail.musicalExperience = hasMusicalKnowledge === 'oui' ? (musicalExperience || "") : "";
-    
+    userByEmail.hasMusicalKnowledge = hasMusicalKnowledge === "oui";
+    userByEmail.musicalExperience =
+      hasMusicalKnowledge === "oui" ? musicalExperience || "" : "";
+
     // Convert radio button values to boolean for other choir
-    userByEmail.isActiveInOtherChoir = isActiveInOtherChoir === 'oui';
-    userByEmail.otherChoir = isActiveInOtherChoir === 'oui' ? (otherChoir || "") : "";
-    
+    userByEmail.isActiveInOtherChoir = isActiveInOtherChoir === "oui";
+    userByEmail.otherChoir =
+      isActiveInOtherChoir === "oui" ? otherChoir || "" : "";
+
     userByEmail.professionalSituation = professionalSituation || "";
     userByEmail.phone = phone || "";
     userByEmail.phoneCountryCode = phoneCountryCode || "";
-    
+
     // Convert radio button values to boolean for sponsorship
-    userByEmail.isSponsored = isSponsored === 'oui';
-    userByEmail.sponsorName = isSponsored === 'oui' ? (sponsorName || "") : "";
-    
+    userByEmail.isSponsored = isSponsored === "oui";
+    userByEmail.sponsorName = isSponsored === "oui" ? sponsorName || "" : "";
+
     userByEmail.motivation = motivation;
     userByEmail.status = "Inactif";
     userByEmail.role = "candidate";
@@ -214,8 +215,21 @@ export const applyForMembership = async (req, res) => {
     userByEmail.canReapply = false;
 
     await userByEmail.save();
-  
-    return res.status(200).json({ message: "Candidature soumise avec succès." });
+
+    // Then clean up the email token fields separately
+    await User.updateOne(
+      { _id: userByEmail._id },
+      {
+        $unset: {
+          emailConfirmationToken: 1,
+          emailConfirmationTokenExpires: 1,
+        },
+      }
+    );
+
+    return res
+      .status(200)
+      .json({ message: "Candidature soumise avec succès." });
   } catch (error) {
     console.error("Error in applyForMembership:", error);
     return res.status(500).json({ message: "Erreur serveur." });
@@ -230,6 +244,11 @@ export const sendEmailConfirmation = async (req, res) => {
   }
 
   try {
+    // ✅ DELETE unconfirmed users with expired tokens
+    await User.deleteMany({
+      emailConfirmed: false,
+      emailConfirmationTokenExpires: { $lt: new Date() },
+    });
     const existingUser = await User.findOne({ email });
 
     // ✅ REPLACE the simple block with status checking
@@ -237,22 +256,24 @@ export const sendEmailConfirmation = async (req, res) => {
       // Check different memberStatus and handle accordingly
       if (existingUser.memberstatus === "Pending") {
         return res.status(409).json({
-          message: "Votre candidature a déjà été enregistrée et est en cours de traitement.",
+          message:
+            "Votre candidature a déjà été enregistrée et est en cours de traitement.",
         });
       }
-      
+
       if (existingUser.memberstatus === "TestScheduled") {
         return res.status(409).json({
-          message: "Votre test d'audition a été programmé. Consultez vos emails.",
+          message:
+            "Votre test d'audition a été programmé. Consultez vos emails.",
         });
       }
-      
+
       if (existingUser.memberstatus === "Accepted") {
         return res.status(409).json({
           message: "Vous êtes déjà membre du CSO.",
         });
       }
-      
+
       // ✅ Allow refused users to get new confirmation email
       if (existingUser.memberstatus === "Refused" || existingUser.canReapply) {
         const token = crypto.randomBytes(32).toString("hex");
@@ -263,43 +284,47 @@ export const sendEmailConfirmation = async (req, res) => {
         existingUser.emailConfirmed = false; // Reset confirmation
         await existingUser.save();
 
-        const confirmLink = `http://localhost:3000/confirm-email?token=${token}`;
-        
+        const confirmLink = `${FRONTEND_URL}/confirm-email?token=${token}`;
+
         // Send email (use your existing email template)
         const htmlContent = generateEmailTemplate(
-          "Nouvelle candidature - Confirmez votre email",
-          `<p style="font-size: 18px; font-weight: 500;">Nouvelle candidature au CSO 🎶</p>`,
+          "Confirmez votre adresse email",
+          `<p style="font-size: 18px; font-weight: 500;">Bienvenue dans le processus de candidature au CSO 🎶</p>`,
           `
-            <p>Nous avons bien reçu votre nouvelle demande avec l'email <strong>${email}</strong>.</p>
-            <p>Pour poursuivre votre candidature, cliquez sur le lien ci-dessous :</p>
-            <div style="text-align: center; margin: 30px 0;">
-              <a href="${confirmLink}" style="background: #5a3e2b; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
-                Confirmer mon email
-              </a>
-            </div>
-            <p>Ce lien est valable pendant <strong>1 heure</strong>.</p>
-          `
+        <p>Nous avons bien reçu votre adresse email <strong>${email}</strong>.</p>
+        <p>Pour poursuivre votre candidature, veuillez cliquer sur le lien ci-dessous :</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${confirmLink}" style="background: #5a3e2b; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+            Confirmer mon email
+          </a>
+        </div>
+        <p>⚠️ Ce lien expirera dans <strong>1 heure</strong>. Passé ce délai, vous devrez recommencer votre inscription.</p>
+      `
         );
 
         await sendNotification({
           email: existingUser.email,
-          subject: "Nouvelle candidature - Confirmez votre email",
+          subject: "Confirmez votre adresse email",
           htmlContent,
           attachments: [
             {
               filename: "music.png",
               path: "./tools/assets/images/music.png",
-              cid: "logo", 
+              cid: "logo",
             },
           ],
         });
 
-        return res.status(200).json({ message: "Email de confirmation envoyé pour votre nouvelle candidature." });
+        return res.status(200).json({
+          message:
+            "Email de confirmation envoyé pour votre nouvelle candidature.",
+        });
       }
-      
+
       // ✅ Default case for existing users with no clear status
       return res.status(409).json({
-        message: "Vous avez déjà postulé au choeur du CSO, nous vous contacterons bientôt",
+        message:
+          "Vous avez déjà postulé au choeur du CSO, nous vous contacterons bientôt",
       });
     }
 
@@ -320,7 +345,7 @@ export const sendEmailConfirmation = async (req, res) => {
     user.emailConfirmationTokenExpires = expires;
     await user.save();
 
-    const confirmLink = `http://localhost:3000/confirm-email?token=${token}`;
+    const confirmLink = `${FRONTEND_URL}/confirm-email?token=${token}`;
 
     const htmlContent = generateEmailTemplate(
       "Confirmez votre adresse email",
@@ -333,8 +358,7 @@ export const sendEmailConfirmation = async (req, res) => {
             Confirmer mon email
           </a>
         </div>
-        <p>Ce lien est valable pendant <strong>1 heure</strong>.</p>
-        <p>Si vous n'avez pas demandé cette confirmation, vous pouvez ignorer ce message.</p>
+        <p>⚠️ Ce lien expirera dans <strong>1 heure</strong>. Passé ce délai, vous devrez recommencer votre inscription.</p>
       `
     );
 
@@ -346,7 +370,7 @@ export const sendEmailConfirmation = async (req, res) => {
         {
           filename: "music.png",
           path: "./tools/assets/images/music.png",
-          cid: "logo", 
+          cid: "logo",
         },
       ],
     });
@@ -358,53 +382,53 @@ export const sendEmailConfirmation = async (req, res) => {
   }
 };
 
-
 export const checkEmailConfirmed = async (req, res) => {
   const { email } = req.query;
   try {
     const user = await User.findOne({ email });
-    
+
     if (!user) {
       return res.status(404).json({ emailConfirmed: false });
     }
-    
+
     // ✅ ADD: Check memberStatus and provide appropriate responses
     if (user.memberstatus === "Pending") {
-      return res.status(409).json({ 
+      return res.status(409).json({
         emailConfirmed: false,
-        message: "Votre candidature a déjà été enregistrée et est en cours de traitement.",
-        applicationStatus: "Pending"
+        message:
+          "Votre candidature a déjà été enregistrée et est en cours de traitement.",
+        applicationStatus: "Pending",
       });
     }
-    
+
     if (user.memberstatus === "TestScheduled") {
-      return res.status(409).json({ 
+      return res.status(409).json({
         emailConfirmed: false,
         message: "Votre test d'audition a été programmé. Consultez vos emails.",
-        applicationStatus: "TestScheduled"
+        applicationStatus: "TestScheduled",
       });
     }
-    
+
     if (user.memberstatus === "Accepted") {
-      return res.status(409).json({ 
+      return res.status(409).json({
         emailConfirmed: false,
         message: "Vous êtes déjà membre du CSO.",
-        applicationStatus: "Accepted"
+        applicationStatus: "Accepted",
       });
     }
-    
+
     if (user.memberstatus === "Refused") {
-      return res.status(409).json({ 
+      return res.status(409).json({
         emailConfirmed: false,
-        message: "Votre candidature précédente n'a pas été retenue. Vous pouvez soumettre une nouvelle candidature.",
+        message:
+          "Votre candidature précédente n'a pas été retenue. Vous pouvez soumettre une nouvelle candidature.",
         applicationStatus: "Refused",
-        canReapply: true
+        canReapply: true,
       });
     }
-    
+
     // ✅ Normal case - return confirmation status
     return res.json({ emailConfirmed: user.emailConfirmed || false });
-    
   } catch (err) {
     return res.status(500).json({ message: "Erreur serveur" });
   }
@@ -413,7 +437,9 @@ export const checkEmailConfirmed = async (req, res) => {
 export const confirmEmail = async (req, res) => {
   const { token } = req.query;
 
-  if (!token) return res.status(400).send("Token manquant");
+  if (!token) {
+    return res.status(400).json({ message: "Token manquant" });
+  }
 
   try {
     const user = await User.findOne({
@@ -421,17 +447,30 @@ export const confirmEmail = async (req, res) => {
       emailConfirmationTokenExpires: { $gt: new Date() },
     });
 
-    if (!user) return res.status(400).send("Lien invalide ou expiré");
+    if (!user) {
+      return res.status(400).json({
+        message: "Lien invalide ou expiré",
+      });
+    }
 
+    // ✅ Even if already confirmed, just return success
+    if (user.emailConfirmed) {
+      return res.status(200).json({
+        message: "Email confirmé avec succès.",
+        email: user.email,
+      });
+    }
+
+    // ✅ Confirm email without deleting token
     user.emailConfirmed = true;
-    user.emailConfirmationToken = undefined;
-    user.emailConfirmationTokenExpires = undefined;
     await user.save();
 
-    res.send(
-      "Email confirmé avec succès. Vous pouvez retourner au formulaire."
-    );
+    return res.status(200).json({
+      message: "Email confirmé avec succès",
+      email: user.email,
+    });
   } catch (err) {
-    res.status(500).send("Erreur serveur");
+    console.error("Erreur dans confirmEmail:", err);
+    return res.status(500).json({ message: "Erreur serveur" });
   }
 };
