@@ -19,11 +19,11 @@ export const uploadPoster = multer({
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (![".jpg", ".jpeg", ".png", ".gif"].includes(ext)) {
-      return cb(new Error("Fichier image uniquement (jpg, png, gif)"));
+      // ✅ CREATE CUSTOM ERROR WITH CODE
+      const error = new Error('INVALID_POSTER_FORMAT');
+      error.code = 'INVALID_POSTER_FORMAT';
+      return cb(error, false);
     }
     cb(null, true);
   },
 });
-
-
-

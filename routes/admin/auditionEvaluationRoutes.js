@@ -5,6 +5,7 @@ import {
   getEvaluation,
   getTessitureOptions,
   getPlanningEvaluations,
+  getCandidateCharterStatus,
 } from '../../controllers/admin/auditionEvaluationController.js';
 import { loggedMiddleware } from '../../middlewares/authMiddlewares.js';
 import { isAdmin, isManager } from '../../middlewares/roleMiddlewares.js';
@@ -30,5 +31,6 @@ router.get('/tessiture-options/:candidateId', getTessitureOptions);
 // Get all evaluations for a planning (optional)
 router.get('/planning/:planningId', getPlanningEvaluations);
 
+router.get('/candidate/:candidateId/charter-status', getCandidateCharterStatus);
 
 export default router;

@@ -20,6 +20,7 @@ import auditionRouter from "./routes/admin/auditionsRoutes.js"
 import convocationRoutes from "./routes/convocationRoutes.js";
 import auditionEvaluationRoutes from './routes/admin/auditionEvaluationRoutes.js';
 import rescheduleRoutes from "./routes/admin/rescheduleRoutes.js";
+import chefPupitreRoutes from './routes/admin/chefPupitreRoutes.js';
 
 import { scheduleRepetitionReminders } from "./tools/cron/repetitionReminderJob.js";
 import { restoreExpiredLeaves } from "./tools/cron/restoreLeaves.js"
@@ -54,6 +55,8 @@ app.use("/auditions", auditionRouter);
 app.use("/convocation", convocationRoutes);
 app.use("/reschedule", rescheduleRoutes);
 app.use('/audition-evaluations', auditionEvaluationRoutes);
+app.use('/chef-pupitre', chefPupitreRoutes);
+
 // Cron job pour les rappels de répétition
 scheduleRepetitionReminders();
 // Cron job pour nettoyer les utilisateurs expirés

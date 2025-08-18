@@ -604,3 +604,4 @@ export const getConfirmedCandidatesForAudition = async (req, res) => {
     });
   }
 };
+

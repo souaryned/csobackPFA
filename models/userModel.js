@@ -93,12 +93,23 @@ const userSchema = new mongoose.Schema({
       "candidate",
       "choriste", 
       "manager",
-      "chef du pupitre",
       "chef de choeur",
       "admin",
     ],
     required: true,
   },
+
+  
+  isChefDePupitre: {
+    type: Boolean,
+    default: false
+  },
+
+  chefDePupitreAssignedAt: {
+    type: Date,
+    default: null
+  },
+
 
   status: {
     type: String,
@@ -125,7 +136,7 @@ const userSchema = new mongoose.Schema({
     required: false
   },
 
- isAuditioned: {
+  isAuditioned: {
     type: Boolean,
     default: false
   },
@@ -194,9 +205,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+
   convocationStatus: {
     type: String,
-    enum: ["Sent", "Confirmed", "Declined", "RescheduleRequested","RescheduledSameDay"],
+    enum: ["Sent", "Confirmed", "Declined", "RescheduleRequested", "RescheduledSameDay"],
     required: false
   },
 
@@ -211,26 +223,48 @@ const userSchema = new mongoose.Schema({
     type: Date,
     required: false
   },
-  convocationStatus: {
-  type: String,
-  enum: ["Sent", "Confirmed", "Declined", "RescheduleRequested", "RescheduledSameDay"],
-  default: "Sent",
-  required: true
-},
 
-// Add this field for same-day reschedule requests
-requestedNewTime: { 
-  type: String, 
-  required: false 
-},
-// Add to User model
-reminderSent: {
-  type: Boolean,
-  default: false
-},
-reminderSentDate: {
-  type: Date
-}
+  // Add this field for same-day reschedule requests
+  requestedNewTime: { 
+    type: String, 
+    required: false 
+  },
+
+  // Add to User model
+  reminderSent: {
+    type: Boolean,
+    default: false
+  },
+  reminderSentDate: {
+    type: Date
+  },
+
+  // ✅ NEW: Charter signing fields (simplified)
+  charterSigned: {
+    type: Boolean,
+    default: false
+  },
+
+  charterSignedAt: {
+    type: Date,
+    default: null
+  },
+
+  charterSigningToken: {
+    type: String,
+    default: null
+  },
+
+  charterSigningTokenExpires: {
+    type: Date,
+    default: null
+  },
+
+  // Temporary status for candidates waiting to sign charter
+  pendingCharterSignature: {
+    type: Boolean,
+    default: false
+  }
 });
 
 export default mongoose.model("User", userSchema);

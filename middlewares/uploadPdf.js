@@ -21,7 +21,10 @@ export const uploadPdf = multer({
     const ext = path.extname(file.originalname).toLowerCase();
     const mimeType = file.mimetype;
     if (ext !== ".pdf" || mimeType !== "application/pdf") {
-      return cb(new Error("Seuls les fichiers PDF valides sont autorisés."));
+      // ✅ CREATE CUSTOM ERROR WITH CODE
+      const error = new Error('INVALID_PDF_FORMAT');
+      error.code = 'INVALID_PDF_FORMAT';
+      return cb(error, false);
     }
     cb(null, true);
   },

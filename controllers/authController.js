@@ -104,6 +104,13 @@ export const updateMe = async (req, res) => {
 
     res.json({ message: "Profil mis à jour", user: updatedUser });
   } catch (err) {
+    // ✅ HANDLE CUSTOM ERROR CODES
+    if (err.code === 'INVALID_AVATAR_FORMAT') {
+      return res.status(400).json({ 
+        message: "Format d'image non supporté", 
+        type: "FILE_FORMAT_ERROR" 
+      });
+    }
     res.status(400).json({ message: err.message });
   }
 };

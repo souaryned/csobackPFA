@@ -1,16 +1,20 @@
-
-
 import User from "../../models/userModel.js";
 import AuditionEvaluation from "../../models/auditionEvaluation.js"; // Add this import
 import AuditionSlot from "../../models/auditionSlotModel.js";
 
 import bcrypt from "bcrypt";
+import crypto from 'crypto';
 import { sendNotification } from "../../tools/mail/mailNotif.js";
 import {
   createAccountEmailTemplate,
   createPupitreUpdatedEmailTemplate,
   createRejectionEmailTemplate,
+  charterSigningInvitationTemplate,
+  createChefPupitreNotificationTemplate,
+  createNewChefPupitreNotificationTemplate
 } from "../../tools/mail/notifTemplate.js";
+
+import {FRONTEND_URL} from "../../config.js"
 
 // Utility: Generate a secure random password
 const generateRandomPassword = () => {
@@ -22,8 +26,6 @@ const generateRandomPassword = () => {
   ).join("");
 };
 
-
-
 export const createUser = async (req, res) => {
   try {
     const {
@@ -31,81 +33,44 @@ export const createUser = async (req, res) => {
       lastName,
       email,
       role,
-      gender,
-      birthDate,
-      nationality,
-      cin,
-      height,
-      hasMusicalKnowledge,
-      hasInstrumentalKnowledge,
       phone,
-      pupitre,
     } = req.body;
 
-    // 1) Champs obligatoires
-    if (!firstName || !lastName || !email || !role) {
+    // 1) Required fields validation
+    if (!firstName || !lastName || !email || !role || !phone) {
       return res.status(400).json({ message: "Required fields missing." });
     }
 
-    // 2) Vérifier l’email (toujours)
+    // 2) Check for duplicate email
     const existingByEmail = await User.findOne({ email });
     if (existingByEmail) {
       return res.status(409).json({ message: "Email existe deja." });
     }
 
-    // 3) Si rôle = "choriste", vérifier aussi le CIN
-    if (role === "choriste") {
-      if (!cin) {
-        return res
-          .status(400)
-          .json({ message: "CIN is required for choriste." });
-      }
-      const existingByCin = await User.findOne({ cin });
-      if (existingByCin) {
-        return res.status(409).json({ message: "Cin existe deja" });
-      }
+    // 3) Validate role (only manager and chef de choeur allowed)
+    if (!["manager", "chef de choeur"].includes(role)) {
+      return res.status(400).json({ message: "Invalid role specified." });
     }
 
-    // 4) Générer et hasher le mot de passe
+    // 4) Generate and hash password
     const plainPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-    // 5) Construire l’objet userData de base
+    // 5) Create user data (simplified - no choriste fields)
     const userData = {
       firstName,
       lastName,
       email,
       role,
-      phone: phone || "",
+      phone,
       password: hashedPassword,
     };
 
-    // 6) Si c’est un choriste, ajouter les champs spécifiques
-    if (role === "choriste") {
-      // vérifier que tous les champs choriste sont fournis
-      if (!gender || !birthDate || !nationality || !height) {
-        return res
-          .status(400)
-          .json({ message: "Missing fields for choriste." });
-      }
-      Object.assign(userData, {
-        gender,
-        birthDate,
-        nationality,
-        cin,
-        height,
-        hasMusicalKnowledge: !!hasMusicalKnowledge,
-        hasInstrumentalKnowledge: !!hasInstrumentalKnowledge,
-        pupitre: pupitre || "",
-        status: "Junior",
-      });
-    }
-
-    // 7) Sauvegarder en base
+    // 6) Save to database
     const newUser = new User(userData);
     await newUser.save();
 
-    // 8) Envoyer l’email de création de compte
+    // 7) Send account creation email
     const emailData = createAccountEmailTemplate({
       firstName,
       lastName,
@@ -156,15 +121,7 @@ export const updateUser = async (req, res) => {
       lastName,
       email,
       role,
-      gender,
-      birthDate,
-      nationality,
-      cin,
-      hasMusicalKnowledge,
-      hasInstrumentalKnowledge,
-      height,
       phone,
-      pupitre,
     } = req.body;
 
     // 1. Load existing user
@@ -179,7 +136,12 @@ export const updateUser = async (req, res) => {
       return res.status(409).json({ message: "User already exists." });
     }
 
-    // 3. Build $set payload
+    // 3. Validate role (only manager and chef de choeur allowed)
+    if (!["manager", "chef de choeur"].includes(role)) {
+      return res.status(400).json({ message: "Invalid role specified." });
+    }
+
+    // 4. Build simplified update payload
     const setPayload = {
       firstName,
       lastName,
@@ -188,42 +150,27 @@ export const updateUser = async (req, res) => {
       phone,
     };
 
-    if (role === "choriste") {
-      Object.assign(setPayload, {
-        gender,
-        birthDate,
-        nationality,
-        cin,
-        hasInstrumentalKnowledge,
-        height,
-        hasMusicalKnowledge,
-        pupitre,
-      });
-    }
+    // 5. Build unset payload to remove any choriste-specific fields
+    const unsetPayload = {
+      gender: "",
+      birthDate: "",
+      nationality: "",
+      cin: "",
+      height: "",
+      hasMusicalKnowledge: "",
+      hasInstrumentalKnowledge: "",
+      pupitre: "",
+      status: "",
+    };
 
-    // 4. Build $unset payload
-    const unsetPayload = {};
-    if (role !== "choriste") {
-      unsetPayload.gender = "";
-      unsetPayload.birthDate = "";
-      unsetPayload.nationality = "";
-      unsetPayload.cin = "";
-      unsetPayload.height = "";
-      unsetPayload.hasMusicalKnowledge = "";
-      unsetPayload.hasInstrumentalKnowledge = "";
-    }
-    if (!["choriste"].includes(role)) {
-      unsetPayload.pupitre = "";
-    }
-
-    // 5. Apply update with both $set and $unset
+    // 6. Apply update
     const updatedUser = await User.findByIdAndUpdate(
       id,
       { $set: setPayload, $unset: unsetPayload },
       { new: true, runValidators: true }
     );
 
-    // 6. If email changed, send notification
+    // 7. If email changed, send notification
     if (email && email !== oldUser.email) {
       const emailData = createAccountEmailTemplate({
         firstName: updatedUser.firstName,
@@ -280,35 +227,7 @@ export const restoreUser = async (req, res) => {
   }
 };
 
-// // 📥 Eliminate Choriste (set status to éliminé + lock account)
-// export const eliminateUser = async (req, res) => {
-//   try {
-//     const { id } = req.params;
-
-//     const user = await User.findById(id);
-
-//     if (!user) {
-//       return res.status(404).json({ message: 'Utilisateur non trouvé.' });
-//     }
-
-//     if (user.role !== 'choriste') {
-//       return res.status(400).json({ message: 'Seuls les choristes peuvent être éliminés.' });
-//     }
-
-//     user.isChoristeLocked = true; // ✅ your updated field
-//     user.status = 'éliminé'; // ✅ update status
-
-//     await user.save();
-
-//     res.status(200).json({ message: 'Choriste éliminé avec succès.' });
-//   } catch (error) {
-//     console.error('Erreur lors de l’élimination:', error);
-//     res.status(500).json({ message: 'Erreur serveur.' });
-//   }
-// };
-
 // controllers/user.controller.js
-
 export const getMembershipSubmissions = async (req, res) => {
   try {
     const status = req.query.status || "Pending";
@@ -490,117 +409,7 @@ export const getAcceptedMemberships = async (req, res) => {
   }
 };
 
-// export const acceptRetenuCandidates = async (req, res) => {
-//   try {
-//     // Find all evaluations with "Retenu" decision and populate candidate info
-//     const retenuEvaluations = await AuditionEvaluation.find({
-//       decision: 'Retenu'
-//     }).populate({
-//       path: 'candidate',
-//       match: { role: 'candidate' },
-//       select: 'firstName lastName email role memberstatus isLocked status password'
-//     });
-
-//     // Filter out evaluations where candidate is null
-//     const validRetenuEvaluations = retenuEvaluations.filter(evaluation =>
-//       evaluation.candidate !== null
-//     );
-
-//     if (validRetenuEvaluations.length === 0) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'Aucun candidat retenu trouvé.'
-//       });
-//     }
-
-//     const results = {
-//       totalProcessed: validRetenuEvaluations.length,
-//       successful: 0,
-//       failed: 0,
-//       details: []
-//     };
-
-//     // Process each candidate
-//     for (const evaluation of validRetenuEvaluations) {
-//       const candidate = evaluation.candidate;
-
-//       try {
-//         // Skip if already processed
-//         if (candidate.memberstatus === 'Accepted') {
-//           results.details.push({
-//             candidateId: candidate._id,
-//             name: `${candidate.firstName} ${candidate.lastName}`,
-//             email: candidate.email,
-//             status: 'skipped',
-//             reason: 'Already accepted'
-//           });
-//           continue;
-//         }
-
-//         // Generate password and hash it
-//         const plainPassword = generateRandomPassword();
-//         const hashedPassword = await bcrypt.hash(plainPassword, 10);
-
-//         // Update user fields
-//         candidate.isLocked = false;
-//         candidate.memberstatus = 'Accepted';
-//         candidate.password = hashedPassword;
-//         candidate.status = 'Junior';
-//         candidate.role = 'choriste';
-
-//         await candidate.save();
-
-//         // Send email
-//         const emailData = createAccountEmailTemplate({
-//           firstName: candidate.firstName,
-//           lastName: candidate.lastName,
-//           email: candidate.email,
-//           password: plainPassword,
-//         });
-
-//         await sendNotification({
-//           email: candidate.email,
-//           subject: emailData.subject,
-//           htmlContent: emailData.htmlContent,
-//           attachments: emailData.attachments,
-//         });
-
-//         results.successful++;
-//         results.details.push({
-//           candidateId: candidate._id,
-//           name: `${candidate.firstName} ${candidate.lastName}`,
-//           email: candidate.email,
-//           status: 'success',
-//           evaluationId: evaluation._id
-//         });
-
-//       } catch (error) {
-//         results.failed++;
-//         results.details.push({
-//           candidateId: candidate._id,
-//           name: `${candidate.firstName} ${candidate.lastName}`,
-//           email: candidate.email,
-//           status: 'failed',
-//           error: error.message
-//         });
-//       }
-//     }
-
-//     res.status(200).json({
-//       success: true,
-//       message: `Traitement terminé: ${results.successful} acceptés, ${results.failed} échecs`,
-//       results
-//     });
-
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'Erreur lors de l\'acceptation en masse.',
-//       error: error.message
-//     });
-//   }
-// };
-
+// ✅ UPDATED: New charter-based acceptance process
 export const acceptRetenuCandidates = async (req, res) => {
   try {
     // Find candidates to process
@@ -610,9 +419,10 @@ export const acceptRetenuCandidates = async (req, res) => {
       path: 'candidate',
       match: { 
         role: 'candidate', 
-        memberstatus: { $ne: 'Accepted' } 
+        memberstatus: { $ne: 'Accepted' },
+        charterSigned: { $ne: true } // Only candidates who haven't signed charter yet
       },
-      select: 'firstName lastName email role memberstatus isLocked status'
+      select: 'firstName lastName email role memberstatus isLocked status charterSigned pendingCharterSignature'
     });
 
     const validEvaluations = retenuEvaluations.filter(evalu => evalu.candidate !== null);
@@ -620,80 +430,78 @@ export const acceptRetenuCandidates = async (req, res) => {
     if (validEvaluations.length === 0) {
       return res.status(404).json({ 
         success: false,
-        message: 'Aucun candidat retenu trouvé.'
+        message: 'Aucun candidat retenu trouvé ou tous ont déjà signé la charte.'
       });
     }
 
-    // console.log(`🚀 Processing ${validEvaluations.length} candidates - Started by: AzizHasnaoui at ${new Date().toISOString()}`);
+    // console.log(`🚀 Processing ${validEvaluations.length} candidates for charter signing - Started by: aziizhasnaoui at ${new Date().toISOString()}`);
 
-    // 🚀 PHASE 1: Quick status updates without passwords (FAST)
-    const quickUpdates = validEvaluations.map(evaluation => ({
-      updateOne: {
-        filter: { _id: evaluation.candidate._id },
-        update: {
-          isLocked: false,
-          memberstatus: 'Accepted', 
-          status: 'Junior',
-          role: 'choriste',
-          passwordPending: true, // Flag for background processing
-          acceptedAt: new Date(),
-          acceptedBy: req.user?._id
+    // 🚀 PHASE 1: Generate charter signing tokens and update status
+    const charterUpdates = validEvaluations.map(evaluation => {
+      const charterToken = crypto.randomBytes(32).toString('hex');
+      const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+      return {
+        updateOne: {
+          filter: { _id: evaluation.candidate._id },
+          update: {
+            pendingCharterSignature: true,
+            charterSigningToken: charterToken,
+            charterSigningTokenExpires: tokenExpires,
+            // ✅ REMOVED: acceptedAt and acceptedBy fields
+            // Don't change memberstatus yet - will be changed after charter signing
+          }
         }
-      }
-    }));
+      };
+    });
 
     // ⚡ INSTANT: Bulk update all candidates
-    const bulkResult = await User.bulkWrite(quickUpdates);
+    const bulkResult = await User.bulkWrite(charterUpdates);
 
-    // 🎯 IMMEDIATE RESPONSE (1-2 seconds total)
+    // 🎯 IMMEDIATE RESPONSE
     res.status(200).json({
       success: true,
-      message: `${validEvaluations.length} candidat(s) accepté(s) avec succès`,
-      totalAccepted: validEvaluations.length,
+      message: `${validEvaluations.length} candidat(s) - Invitation à signer la charte envoyée`,
+      totalProcessed: validEvaluations.length,
       successful: bulkResult.modifiedCount,
       emailStatus: 'processing_background',
       estimatedEmailTime: `${Math.ceil(validEvaluations.length / 10)} minutes`,
       timestamp: new Date().toISOString()
     });
 
-    // 🔥 PHASE 2: Background password generation + email sending
+    // 🔥 PHASE 2: Background charter invitation email sending
     setImmediate(async () => {
-      // console.log(`📧 Starting background processing for ${validEvaluations.length} candidates...`);
+      // console.log(`📧 Starting background charter invitation processing for ${validEvaluations.length} candidates...`);
       
-      const BATCH_SIZE = 10; // Process 10 candidates at a time
+      const BATCH_SIZE = 10;
       let successful = 0;
       let failed = 0;
       const startTime = new Date();
 
       try {
-        for (let i = 0; i < validEvaluations.length; i += BATCH_SIZE) {
-          const batch = validEvaluations.slice(i, i + BATCH_SIZE);
-          const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-          const totalBatches = Math.ceil(validEvaluations.length / BATCH_SIZE);
-          
-          // console.log(`⚡ Processing batch ${batchNumber}/${totalBatches} (${batch.length} candidates)`);
-          
-          // Process batch in parallel
-          const batchPromises = batch.map(async (evaluation) => {
-            try {
-              const candidate = evaluation.candidate;
-              
-              // Generate password
-              const plainPassword = generateRandomPassword();
-              const hashedPassword = await bcrypt.hash(plainPassword, 8);
-              
-              // Update candidate with password
-              await User.findByIdAndUpdate(candidate._id, {
-                password: hashedPassword,
-                $unset: { passwordPending: 1 }
-              });
+        // Get updated candidates with tokens
+        const updatedCandidates = await User.find({
+          _id: { $in: validEvaluations.map(e => e.candidate._id) },
+          pendingCharterSignature: true,
+          charterSigningToken: { $exists: true }
+        }).select('firstName lastName email charterSigningToken');
 
-              // Prepare and send email
-              const emailTemplate = createAccountEmailTemplate({
+        for (let i = 0; i < updatedCandidates.length; i += BATCH_SIZE) {
+          const batch = updatedCandidates.slice(i, i + BATCH_SIZE);
+          const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+          const totalBatches = Math.ceil(updatedCandidates.length / BATCH_SIZE);
+          
+          // console.log(`⚡ Processing charter invitation batch ${batchNumber}/${totalBatches} (${batch.length} candidates)`);
+          
+          const batchPromises = batch.map(async (candidate) => {
+            try {
+              const charterSigningLink = `${FRONTEND_URL}/charter/sign/${candidate.charterSigningToken}`;
+              
+              const emailTemplate = charterSigningInvitationTemplate({
                 firstName: candidate.firstName,
                 lastName: candidate.lastName,
                 email: candidate.email,
-                password: plainPassword
+                charterSigningLink
               });
 
               await sendNotification({
@@ -703,29 +511,17 @@ export const acceptRetenuCandidates = async (req, res) => {
                 attachments: emailTemplate.attachments
               });
 
-              // console.log(`✅ Completed: ${candidate.firstName} ${candidate.lastName} (${candidate.email})`);
+              // console.log(`✅ Charter invitation sent: ${candidate.firstName} ${candidate.lastName} (${candidate.email})`);
               return { success: true, candidate: candidate._id };
 
             } catch (error) {
-              console.error(`❌ Failed: ${evaluation.candidate.firstName} ${evaluation.candidate.lastName}`, error.message);
-              
-              // Remove passwordPending flag even on failure
-              try {
-                await User.findByIdAndUpdate(evaluation.candidate._id, {
-                  $unset: { passwordPending: 1 }
-                });
-              } catch (cleanupError) {
-                console.error('Cleanup failed:', cleanupError.message);
-              }
-              
-              return { success: false, error: error.message, candidate: evaluation.candidate._id };
+              console.error(`❌ Failed charter invitation: ${candidate.firstName} ${candidate.lastName}`, error.message);
+              return { success: false, error: error.message, candidate: candidate._id };
             }
           });
 
-          // Wait for batch completion
           const batchResults = await Promise.allSettled(batchPromises);
           
-          // Count results
           batchResults.forEach(result => {
             if (result.status === 'fulfilled' && result.value.success) {
               successful++;
@@ -734,12 +530,10 @@ export const acceptRetenuCandidates = async (req, res) => {
             }
           });
 
-          // Progress logging
-          const progress = Math.round(((i + batch.length) / validEvaluations.length) * 100);
-          // console.log(`📊 Progress: ${progress}% (${successful} successful, ${failed} failed)`);
+          const progress = Math.round(((i + batch.length) / updatedCandidates.length) * 100);
+          // console.log(`📊 Charter invitation progress: ${progress}% (${successful} successful, ${failed} failed)`);
           
-          // Small delay between batches to avoid overwhelming email service
-          if (i + BATCH_SIZE < validEvaluations.length) {
+          if (i + BATCH_SIZE < updatedCandidates.length) {
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }
@@ -747,58 +541,290 @@ export const acceptRetenuCandidates = async (req, res) => {
         const endTime = new Date();
         const duration = Math.round((endTime - startTime) / 1000);
         
-        // console.log(`🎯 Background processing completed in ${duration}s`);
+        // console.log(`🎯 Charter invitation processing completed in ${duration}s`);
         // console.log(`📈 Final results: ${successful} successful, ${failed} failed`);
-        // console.log(`✨ All done! Processed by: AzizHasnaoui at ${endTime.toISOString()}`);
 
       } catch (backgroundError) {
-        // console.error('💥 Background processing failed:', backgroundError);
+        console.error('💥 Charter invitation background processing failed:', backgroundError);
       }
     });
 
   } catch (error) {
-    // console.error('❌ Error in bulk acceptance:', error);
+    console.error('❌ Error in charter invitation process:', error);
     return res.status(500).json({ 
       success: false,
-      message: 'Erreur lors de l\'acceptation des candidats.',
+      message: 'Erreur lors de l\'envoi des invitations à signer la charte.',
       error: error.message,
       timestamp: new Date().toISOString()
     });
   }
 };
 
-export const updatePupitre = async (req, res) => {
-  const { userId } = req.params;
-  const { pupitre } = req.body;
-
-  const validPupitres = ["soprano", "alto", "ténor", "basse"];
-  if (!validPupitres.includes(pupitre)) {
-    return res.status(400).json({ message: "Valeur de pupitre invalide." });
-  }
-
+// ✅ NEW: Charter signing endpoint
+export const signCharter = async (req, res) => {
   try {
-    const user = await User.findById(userId);
-    if (!user || user.role !== "choriste") {
-      return res.status(404).json({ message: "Choriste non trouvé." });
+    const { token } = req.params;
+    const { signature } = req.body; // This could be just a boolean confirmation
+
+    if (!token || !signature) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token et signature requis.'
+      });
     }
 
-    user.pupitre = pupitre;
-    await user.save();
-
-    // ✅ Notify the user by email using templated structure
-    const emailData = createPupitreUpdatedEmailTemplate(user);
-
-    await sendNotification({
-      email: user.email,
-      subject: emailData.subject,
-      htmlContent: emailData.htmlContent,
-      attachments: emailData.attachments || [],
+    // Find candidate with valid token
+    const candidate = await User.findOne({
+      charterSigningToken: token,
+      charterSigningTokenExpires: { $gt: new Date() },
+      pendingCharterSignature: true,
+      charterSigned: false
     });
 
-    res.status(200).json({ message: "Pupitre mis à jour avec succès.", user });
+    if (!candidate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token invalide ou expiré.'
+      });
+    }
+
+    // Generate account credentials
+    const plainPassword = generateRandomPassword();
+    const hashedPassword = await bcrypt.hash(plainPassword, 8);
+
+    // Update candidate with charter signature and account activation
+    await User.findByIdAndUpdate(candidate._id, {
+      // Charter fields
+      charterSigned: true,
+      charterSignedAt: new Date(),
+      charterSigningToken: null,
+      charterSigningTokenExpires: null,
+      pendingCharterSignature: false,
+      
+      // Account activation
+      password: hashedPassword,
+      role: 'choriste',
+      memberstatus: 'Accepted',
+      status: 'Junior',
+      isLocked: false
+    });
+
+    // Send account credentials email
+    const emailTemplate = createAccountEmailTemplate({
+      firstName: candidate.firstName,
+      lastName: candidate.lastName,
+      email: candidate.email,
+      password: plainPassword
+    });
+
+    await sendNotification({
+      email: candidate.email,
+      subject: emailTemplate.subject,
+      htmlContent: emailTemplate.htmlContent,
+      attachments: emailTemplate.attachments
+    });
+
+    // console.log(`✅ Charter signed and account activated: ${candidate.firstName} ${candidate.lastName}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Charte signée avec succès ! Vos identifiants ont été envoyés par email.',
+      candidateName: `${candidate.firstName} ${candidate.lastName}`
+    });
+
   } catch (error) {
-    console.error("Erreur mise à jour pupitre:", error);
-    res.status(500).json({ message: "Erreur serveur." });
+    console.error('❌ Error in charter signing:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la signature de la charte.',
+      error: error.message
+    });
+  }
+};
+
+// ✅ NEW: Endpoint to display charter (GET)
+export const getCharterForSigning = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const candidate = await User.findOne({
+      charterSigningToken: token,
+      charterSigningTokenExpires: { $gt: new Date() },
+      pendingCharterSignature: true,
+      charterSigned: false
+    }).select('firstName lastName email');
+
+    if (!candidate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token invalide ou expiré.'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      candidate: {
+        firstName: candidate.firstName,
+        lastName: candidate.lastName,
+        email: candidate.email
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching charter:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors de la récupération de la charte.'
+    });
+  }
+};
+
+// ✅ UPDATED: updatePupitre endpoint with chef notifications
+export const updatePupitre = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { pupitre } = req.body;
+
+    // Find the user
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Choriste introuvable' });
+    }
+
+    // ✅ Backend chef validation as safety net
+    if (user.isChefDePupitre) {
+      return res.status(400).json({ 
+        message: 'Impossible de modifier la tessiture d\'un chef de pupitre. Retirez d\'abord son statut de chef.' 
+      });
+    }
+
+    const oldPupitre = user.pupitre;
+    const newPupitre = pupitre || null;
+
+    // Update pupitre
+    user.pupitre = newPupitre;
+    await user.save();
+
+    // ✅ INSTANT RESPONSE - Don't wait for emails
+    res.status(200).json({
+      message: newPupitre 
+        ? `La tessiture de ${user.firstName} ${user.lastName} a été modifiée vers ${newPupitre}.`
+        : `La tessiture de ${user.firstName} ${user.lastName} a été supprimée.`,
+      user: {
+        _id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        pupitre: user.pupitre
+      }
+    });
+
+    // ✅ BACKGROUND EMAIL SENDING (fire & forget)
+    setImmediate(async () => {
+      try {
+        // ✅ 1. NOTIFY THE CHORISTE THEMSELVES (the missing part!)
+        if (oldPupitre !== newPupitre) {
+          try {
+            const emailData = createPupitreUpdatedEmailTemplate(user);
+
+            await sendNotification({
+              email: user.email,
+              subject: emailData.subject,
+              htmlContent: emailData.htmlContent,
+              attachments: emailData.attachments || [],
+            });
+
+            // console.log(`✅ Choriste notified of their own pupitre change: ${user.firstName} ${user.lastName} (${user.email})`);
+            
+          } catch (emailError) {
+            console.error(`❌ Failed to notify choriste of their own change:`, emailError);
+          }
+        }
+
+        // Only send emails to chefs if there's an actual pupitre change and both old/new are valid pupitres
+        const validPupitres = ['soprano', 'alto', 'ténor', 'basse'];
+        
+        if (oldPupitre && validPupitres.includes(oldPupitre) && oldPupitre !== newPupitre) {
+          // ✅ 2. Notify OLD pupitre chefs (choriste LEAVING)
+          try {
+            const oldPupitreChefs = await User.find({
+              role: 'choriste',
+              pupitre: oldPupitre,
+              isChefDePupitre: true,
+              isLocked: false
+            }).select('firstName lastName email');
+
+            for (const chef of oldPupitreChefs) {
+              const oldChefEmailData = createChefPupitreNotificationTemplate({
+                chefFirstName: chef.firstName,
+                chefLastName: chef.lastName,
+                choristeName: `${user.firstName} ${user.lastName}`,
+                chorisiteEmail: user.email,
+                newPupitre: newPupitre || 'Non défini',
+                oldPupitre: oldPupitre
+              });
+              
+              await sendNotification({
+                email: chef.email,
+                subject: oldChefEmailData.subject,
+                htmlContent: oldChefEmailData.htmlContent,
+                attachments: oldChefEmailData.attachments || [],
+              });
+            }
+            
+            if (oldPupitreChefs.length > 0) {
+              // console.log(`✅ Old pupitre chefs notified: ${oldPupitreChefs.length} chef(s) for ${oldPupitre}`);
+            }
+            
+          } catch (emailError) {
+            console.error(`❌ Failed to notify old pupitre chefs:`, emailError);
+          }
+        }
+
+        if (newPupitre && validPupitres.includes(newPupitre) && oldPupitre !== newPupitre) {
+          // ✅ 3. Notify NEW pupitre chefs (choriste JOINING)
+          try {
+            const newPupitreChefs = await User.find({
+              role: 'choriste',
+              pupitre: newPupitre,
+              isChefDePupitre: true,
+              isLocked: false
+            }).select('firstName lastName email');
+
+            for (const chef of newPupitreChefs) {
+              const newChefEmailData = createNewChefPupitreNotificationTemplate({
+                chefFirstName: chef.firstName,
+                chefLastName: chef.lastName,
+                choristeName: `${user.firstName} ${user.lastName}`,
+                chorisiteEmail: user.email,
+                newPupitre: newPupitre,
+                oldPupitre: oldPupitre || 'Non défini'
+              });
+              
+              await sendNotification({
+                email: chef.email,
+                subject: newChefEmailData.subject,
+                htmlContent: newChefEmailData.htmlContent,
+                attachments: newChefEmailData.attachments || [],
+              });
+            }
+            
+            if (newPupitreChefs.length > 0) {
+              // console.log(`✅ New pupitre chefs notified: ${newPupitreChefs.length} chef(s) for ${newPupitre}`);
+            }
+            
+          } catch (emailError) {
+            console.error(`❌ Failed to notify new pupitre chefs:`, emailError);
+          }
+        }
+        
+      } catch (emailError) {
+        console.error(`❌ Background email error for pupitre change:`, emailError);
+      }
+    });
+
+  } catch (error) {
+    console.error('Error updating pupitre:', error);
+    res.status(500).json({ message: 'Erreur lors de la mise à jour de la tessiture' });
   }
 };
 
@@ -809,7 +835,7 @@ export const getActiveChoristes = async (req, res) => {
     const choristes = await User.find({
       role: "choriste",
       status: { $nin: excludedStatuses },
-    }).select("email lastName firstName pupitre gender"); // ← on ajoute “gender”
+    }).select("email lastName firstName pupitre gender isChefDePupitre"); // ✅ ADD isChefDePupitre
 
     res.status(200).json(choristes);
   } catch (error) {
@@ -822,7 +848,6 @@ export const getActiveChoristes = async (req, res) => {
     });
   }
 };
-
 
 export const getScheduledCandidatesWithSlots = async (req, res) => {
   try {
@@ -1026,3 +1051,41 @@ export const getAvailableDates = async (req, res) => {
 };
 
 
+
+// controllers/admin/repetitionController.js - ADD THIS FUNCTION:
+
+// ✅ NEW: Get choristes by pupitre for manager filters
+export const getChoristesByPupitre = async (req, res) => {
+  try {
+    const { pupitre } = req.query;
+
+    // Build query
+    let query = {
+      role: 'choriste',
+      isLocked: { $ne: true }
+    };
+
+    // Add pupitre filter if provided
+    if (pupitre) {
+      // Validate pupitre value
+      const validPupitres = ['soprano', 'alto', 'ténor', 'basse'];
+      if (!validPupitres.includes(pupitre)) {
+        return res.status(400).json({ 
+          message: 'Pupitre invalide. Options: ' + validPupitres.join(', ')
+        });
+      }
+      query.pupitre = pupitre;
+    }
+
+    // Get choristes
+    const choristes = await User.find(query)
+      .select('firstName lastName email pupitre')
+      .sort({ firstName: 1, lastName: 1 });
+
+    res.json(choristes);
+
+  } catch (error) {
+    console.error('Error getting choristes by pupitre:', error);
+    res.status(500).json({ message: 'Erreur serveur.' });
+  }
+};

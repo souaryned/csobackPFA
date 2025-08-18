@@ -23,10 +23,18 @@ export const isChorister = (req, res, next) => {
 };
 
 
+export const isChefDeChoeur = (req, res, next) => {
+  if (req.auth.role !== "chef de choeur") {
+    return res.status(403).json({ error: "Accès refusé. Chef de chœur uniquement." });
+  }
+  next();
+};
+
+
 // 📌 Allow only choristers or admins
-export const isChoristerOrAdmin = (req, res, next) => {
+export const isChoristerOrAdminOrManager = (req, res, next) => {
   const { role } = req.auth;
-  if (role !== "choriste" && role !== "admin") {
+  if (role !== "choriste" && role !== "admin" && role !== "manager") {
     return res.status(403).json({ error: "Accès refusé. Choriste ou admin uniquement." });
   }
   next();

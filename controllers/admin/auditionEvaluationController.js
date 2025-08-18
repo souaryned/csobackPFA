@@ -92,6 +92,7 @@ export const createEvaluation = async (req, res) => {
 };
 
 // Update existing evaluation
+// Update existing evaluation
 export const updateEvaluation = async (req, res) => {
   try {
     const { evaluationId } = req.params;
@@ -105,10 +106,15 @@ export const updateEvaluation = async (req, res) => {
     } = req.body;
 
     const evaluation = await AuditionEvaluation.findById(evaluationId)
-      .populate('candidate', 'firstName lastName gender');
+      .populate('candidate', 'firstName lastName gender charterSigned'); // ✅ ADD charterSigned
 
     if (!evaluation) {
       return res.status(404).json({ message: "Évaluation introuvable" });
+    }
+
+    // ✅ ADD THESE 3 LINES:
+    if (evaluation.candidate.charterSigned === true) {
+      return res.status(403).json({ message: "Ce candidat est devenu choriste - modification interdite" });
     }
 
     // Validate tessiture matches candidate's gender
@@ -130,7 +136,7 @@ export const updateEvaluation = async (req, res) => {
     evaluation.ordrePassage = ordrePassage || null;
     evaluation.decision = decision;
     evaluation.lastModifiedAt = new Date();
-    evaluation.lastModifiedBy = req.auth.userId; // ✅ Fixed: use req.auth.userId
+    evaluation.lastModifiedBy = req.auth.userId;
 
     await evaluation.save();
 
@@ -145,7 +151,7 @@ export const updateEvaluation = async (req, res) => {
     });
 
   } catch (error) {
-    // console.error('Error updating evaluation:', error);
+    console.error('Error updating evaluation:', error);
     res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'évaluation' });
   }
 };
@@ -236,3 +242,25 @@ export const getPlanningEvaluations = async (req, res) => {
 };
 
 
+// ✅ ADD this function to auditionEvaluationController.js
+// Get candidate charter status
+export const getCandidateCharterStatus = async (req, res) => {
+  try {
+    const { candidateId } = req.params;
+
+    const candidate = await User.findById(candidateId, 'charterSigned charterSignedAt firstName lastName');
+    if (!candidate) {
+      return res.status(404).json({ message: "Candidat introuvable" });
+    }
+
+    res.status(200).json({
+      charterSigned: candidate.charterSigned || false,
+      charterSignedAt: candidate.charterSignedAt || null,
+      candidateName: `${candidate.firstName} ${candidate.lastName}` // Bonus: for logging
+    });
+
+  } catch (error) {
+    console.error('Error fetching candidate charter status:', error);
+    res.status(500).json({ message: 'Erreur lors de la vérification du statut de la charte' });
+  }
+};

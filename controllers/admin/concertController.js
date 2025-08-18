@@ -8,18 +8,15 @@ export const createConcert = async (req, res) => {
   try {
     const concertData = req.body;
 
-    // Vérification du titre
     if (!concertData.title || concertData.title.trim() === "") {
       return res.status(400).json({ message: "Le titre est requis." });
     }
 
-    // Vérification de l'unicité de dateHeure
     const existingConcert = await Concert.findOne({ dateHeure: concertData.dateHeure });
     if (existingConcert) {
       return res.status(409).json({ message: "Un concert à cette date et heure existe déjà." });
     }
 
-    // Traitement de l'affiche
     if (req.file) {
       concertData.poster = req.file.filename;
     }
@@ -32,44 +29,27 @@ export const createConcert = async (req, res) => {
 
     res.status(201).json({ message: "Concert créé avec succès." });
   } catch (error) {
+    // ✅ HANDLE CUSTOM ERROR CODES
+    if (error.code === 'INVALID_POSTER_FORMAT') {
+      return res.status(400).json({ 
+        message: "Format d'affiche non supporté", 
+        type: "FILE_FORMAT_ERROR" 
+      });
+    }
     console.error("Erreur création concert:", error);
     res.status(500).json({ message: "Erreur création concert." });
   }
 };
 
-
-
-// 📥 Get all concerts
-export const getConcerts = async (req, res) => {
-  try {
-    const concerts = await Concert.find().populate("programme");
-    res.json(concerts);
-  } catch (error) {
-    res.status(500).json({ message: "Erreur lors de la récupération." });
-  }
-};
-
-// 📥 Get archived concerts
-// export const getArchivedConcerts = async (req, res) => {
-//   try {
-//     const concerts = await Concert.find({ isArchived: true }).populate("programme");
-//     res.json(concerts);
-//   } catch (error) {
-//     res.status(500).json({ message: "Erreur lors de la récupération des archivés." });
-//   }
-// };
-
-// ✏️ Update concert
+// 📤 Update a concert
 export const updateConcert = async (req, res) => {
   try {
     const updateData = req.body;
 
-    // Titre vide ?
     if (updateData.title && updateData.title.trim() === "") {
       return res.status(400).json({ message: "Le titre ne peut pas être vide." });
     }
 
-    // Vérification de l'unicité de dateHeure si modifiée
     if (updateData.dateHeure) {
       const existingConcert = await Concert.findOne({
         dateHeure: updateData.dateHeure,
@@ -98,10 +78,41 @@ export const updateConcert = async (req, res) => {
 
     res.json({ message: "Concert mis à jour avec succès.", updated });
   } catch (error) {
+    // ✅ HANDLE CUSTOM ERROR CODES
+    if (error.code === 'INVALID_POSTER_FORMAT') {
+      return res.status(400).json({ 
+        message: "Format d'affiche non supporté", 
+        type: "FILE_FORMAT_ERROR" 
+      });
+    }
     console.error("Erreur update concert:", error);
     res.status(500).json({ message: "Erreur update concert." });
   }
 };
+
+
+
+// 📥 Get all concerts
+export const getConcerts = async (req, res) => {
+  try {
+    const concerts = await Concert.find().populate("programme");
+    res.json(concerts);
+  } catch (error) {
+    res.status(500).json({ message: "Erreur lors de la récupération." });
+  }
+};
+
+// 📥 Get archived concerts
+// export const getArchivedConcerts = async (req, res) => {
+//   try {
+//     const concerts = await Concert.find({ isArchived: true }).populate("programme");
+//     res.json(concerts);
+//   } catch (error) {
+//     res.status(500).json({ message: "Erreur lors de la récupération des archivés." });
+//   }
+// };
+
+
 
 
 // 🗑️ Archive or permanent delete (biz logic)

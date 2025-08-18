@@ -23,7 +23,7 @@ export const sendNotification = async ({ email, subject, htmlContent, attachment
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`Notification sent to ${email}`);
+    // console.log(`Notification sent to ${email}`);
   } catch (error) {
     console.error(`Error sending notification to ${email}:`, error);
   }
