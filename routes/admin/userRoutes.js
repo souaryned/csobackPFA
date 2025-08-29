@@ -22,7 +22,7 @@ import {
   getChoristesByPupitre
 } from '../../controllers/admin/userController.js';
 import { loggedMiddleware } from '../../middlewares/authMiddlewares.js';
-import { isAdmin, isAdminOrChef, isManager, isManagerOrChef } from '../../middlewares/roleMiddlewares.js';
+import { isAdmin, isManager, isManagerOrChef } from '../../middlewares/roleMiddlewares.js';
 
 const router = express.Router();
 
@@ -35,7 +35,7 @@ router.get('/locked', loggedMiddleware, isAdmin, getLockedUsers);
 router.patch('/:id', loggedMiddleware, isAdmin, updateUser);
 router.delete('/:id', loggedMiddleware, isAdmin, lockUser);
 router.delete('/:id/permanent', loggedMiddleware, isAdmin, deleteUserPermanent);
-router.post('/restore/:id', isAdmin, restoreUser);
+router.post('/restore/:id', loggedMiddleware, isAdmin, restoreUser);
 // router.post('/eliminate/:id', eliminateUser);
 // Membership management routes
 router.get('/membership-submissions', loggedMiddleware, isManager, getMembershipSubmissions);

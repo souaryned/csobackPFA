@@ -3,7 +3,6 @@ import User from '../../models/userModel.js';
 import AuditionSlot from '../../models/auditionSlotModel.js';
 
 
-// Create new audition evaluation
 export const createEvaluation = async (req, res) => {
   try {
     const { 
@@ -13,7 +12,6 @@ export const createEvaluation = async (req, res) => {
       oeuvreChante, 
       remarque, 
       note, 
-      ordrePassage, 
       decision 
     } = req.body;
 
@@ -50,6 +48,22 @@ export const createEvaluation = async (req, res) => {
       return res.status(400).json({ message: "Une évaluation existe déjà pour ce candidat" });
     }
 
+    // ✅ FIXED: Auto-calculate next ordre de passage PER AUDITION PLANNING
+    // Get all audition slots for this specific planning
+    const allSlotsForPlanning = await AuditionSlot.find({ 
+      paramId: auditionSlot.paramId 
+    }).select('_id');
+
+    const slotIds = allSlotsForPlanning.map(slot => slot._id);
+
+    // Count existing evaluations for THIS specific audition planning only
+    const existingEvaluationsCount = await AuditionEvaluation.countDocuments({
+      auditionSlot: { $in: slotIds }
+    });
+
+    // Next order number for THIS audition planning
+    const nextOrderNumber = existingEvaluationsCount + 1;
+
     // Create evaluation
     const evaluation = new AuditionEvaluation({
       candidate: candidateId,
@@ -58,7 +72,7 @@ export const createEvaluation = async (req, res) => {
       oeuvreChante,
       remarque: remarque || "",
       note,
-      ordrePassage: ordrePassage || null,
+      ordrePassage: nextOrderNumber, // ✅ Auto-assigned per audition planning
       decision,
       evaluatedBy: req.auth.userId,
       lastModifiedBy: req.auth.userId
@@ -66,12 +80,12 @@ export const createEvaluation = async (req, res) => {
 
     await evaluation.save();
 
-    // ✅ NEW: Mark candidate as auditioned
+    // Mark candidate as auditioned
     await User.findByIdAndUpdate(
       candidateId,
       { 
         isAuditioned: true,
-        auditionnedAt: new Date()  // Bonus: track when they were auditioned
+        auditionnedAt: new Date()
       },
       { new: true }
     );
@@ -86,13 +100,11 @@ export const createEvaluation = async (req, res) => {
     });
 
   } catch (error) {
-    // console.error('Error creating evaluation:', error);
+    console.error('Error creating evaluation:', error);
     res.status(500).json({ message: 'Erreur lors de la création de l\'évaluation' });
   }
 };
 
-// Update existing evaluation
-// Update existing evaluation
 export const updateEvaluation = async (req, res) => {
   try {
     const { evaluationId } = req.params;
@@ -101,18 +113,16 @@ export const updateEvaluation = async (req, res) => {
       oeuvreChante, 
       remarque, 
       note, 
-      ordrePassage, 
       decision 
     } = req.body;
 
     const evaluation = await AuditionEvaluation.findById(evaluationId)
-      .populate('candidate', 'firstName lastName gender charterSigned'); // ✅ ADD charterSigned
+      .populate('candidate', 'firstName lastName gender charterSigned');
 
     if (!evaluation) {
       return res.status(404).json({ message: "Évaluation introuvable" });
     }
 
-    // ✅ ADD THESE 3 LINES:
     if (evaluation.candidate.charterSigned === true) {
       return res.status(403).json({ message: "Ce candidat est devenu choriste - modification interdite" });
     }
@@ -128,12 +138,11 @@ export const updateEvaluation = async (req, res) => {
       });
     }
 
-    // Update fields
+    // ✅ NOTE: We DON'T update ordrePassage on edit - it stays the same
     evaluation.tessiture = tessiture;
     evaluation.oeuvreChante = oeuvreChante;
     evaluation.remarque = remarque || "";
     evaluation.note = note;
-    evaluation.ordrePassage = ordrePassage || null;
     evaluation.decision = decision;
     evaluation.lastModifiedAt = new Date();
     evaluation.lastModifiedBy = req.auth.userId;
@@ -155,6 +164,7 @@ export const updateEvaluation = async (req, res) => {
     res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'évaluation' });
   }
 };
+
 // Get evaluation by candidate and audition slot
 export const getEvaluation = async (req, res) => {
   try {
@@ -168,14 +178,9 @@ export const getEvaluation = async (req, res) => {
     .populate('evaluatedBy', 'firstName lastName')
     .populate('lastModifiedBy', 'firstName lastName');
 
-    // if (!evaluation) {
-    //   return res.status(404).json({ message: "Aucune évaluation trouvée" });
-    // }
-
     res.status(200).json({ evaluation });
 
   } catch (error) {
-    // console.error('Error fetching evaluation:', error);
     res.status(500).json({ message: 'Erreur lors de la récupération de l\'évaluation' });
   }
 };
@@ -206,12 +211,11 @@ export const getTessitureOptions = async (req, res) => {
     });
 
   } catch (error) {
-    // console.error('Error fetching tessiture options:', error);
     res.status(500).json({ message: 'Erreur lors de la récupération des options' });
   }
 };
 
-// Get all evaluations for a planning (optional - for statistics)
+// ✅ UPDATED: Get all evaluations for a planning with ordre de passage
 export const getPlanningEvaluations = async (req, res) => {
   try {
     const { planningId } = req.params;
@@ -225,7 +229,8 @@ export const getPlanningEvaluations = async (req, res) => {
           select: 'firstName lastName email gender'
         }
       })
-      .populate('evaluatedBy', 'firstName lastName');
+      .populate('evaluatedBy', 'firstName lastName')
+      .sort({ ordrePassage: 1 }); // ✅ Sort by ordre de passage
 
     // Filter out null auditionSlots (those that don't match the planning)
     const filteredEvaluations = evaluations.filter(evaluation => evaluation.auditionSlot !== null);
@@ -236,13 +241,10 @@ export const getPlanningEvaluations = async (req, res) => {
     });
 
   } catch (error) {
-    // console.error('Error fetching planning evaluations:', error);
     res.status(500).json({ message: 'Erreur lors de la récupération des évaluations' });
   }
 };
 
-
-// ✅ ADD this function to auditionEvaluationController.js
 // Get candidate charter status
 export const getCandidateCharterStatus = async (req, res) => {
   try {
@@ -256,7 +258,7 @@ export const getCandidateCharterStatus = async (req, res) => {
     res.status(200).json({
       charterSigned: candidate.charterSigned || false,
       charterSignedAt: candidate.charterSignedAt || null,
-      candidateName: `${candidate.firstName} ${candidate.lastName}` // Bonus: for logging
+      candidateName: `${candidate.firstName} ${candidate.lastName}`
     });
 
   } catch (error) {

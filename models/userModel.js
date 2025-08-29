@@ -25,15 +25,15 @@ const userSchema = new mongoose.Schema({
   identityType: {
     type: String,
     enum: ["CIN", "Passeport"],
-    required: false
+    required: false,
   },
-  
+
   // UPDATED: Identity number (CIN or Passport)
   identityNumber: {
     type: String,
     unique: true,
     sparse: true,
-    required: false  // Fixed typo: was "requred"
+    required: false, // Fixed typo: was "requred"
   },
 
   height: {
@@ -44,11 +44,11 @@ const userSchema = new mongoose.Schema({
   // NEW: Sponsorship fields
   isSponsored: {
     type: Boolean,
-    required: false
+    required: false,
   },
   sponsorName: {
     type: String, // Sponsor's full name
-    required: false
+    required: false,
   },
 
   // MOVED to Step 3: Musical knowledge
@@ -89,69 +89,54 @@ const userSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: [
-      "candidate",
-      "choriste", 
-      "manager",
-      "chef de choeur",
-      "admin",
-    ],
+    enum: ["candidate", "choriste", "manager", "chef de choeur", "admin"],
     required: true,
   },
 
-  
   isChefDePupitre: {
     type: Boolean,
-    default: false
+    default: false,
   },
 
   chefDePupitreAssignedAt: {
     type: Date,
-    default: null
+    default: null,
   },
-
 
   status: {
     type: String,
-    enum: [
-      "Inactif",
-      "Junior", 
-      "Sénior",
-      "Vétéran",
-      "En congé",
-      "éliminé",
-    ],
+    enum: ["Inactif", "Junior", "Sénior", "Vétéran", "En congé", "éliminé"],
     required: false,
   },
 
   previousStatus: {
     type: String,
     enum: ["Inactif", "Junior", "Sénior", "Vétéran", "éliminé"],
-    default: null
+    default: null,
   },
-  
+
   memberstatus: {
     type: String,
     enum: ["Pending", "TestScheduled", "Accepted", "Refused"],
-    required: false
+    required: false,
   },
 
   isAuditioned: {
     type: Boolean,
-    default: false
+    default: false,
   },
   auditionnedAt: {
     type: Date,
-    default: null
+    default: null,
   },
-  
+
   // ✅ ADD THIS: canReapply field
   canReapply: {
     type: Boolean,
     default: false,
-    required: false
+    required: false,
   },
-  
+
   testDate: { type: Date, default: null },
   pupitre: {
     type: String,
@@ -208,63 +193,109 @@ const userSchema = new mongoose.Schema({
 
   convocationStatus: {
     type: String,
-    enum: ["Sent", "Confirmed", "Declined", "RescheduleRequested", "RescheduledSameDay"],
-    required: false
+    enum: [
+      "Sent",
+      "Confirmed",
+      "Declined",
+      "RescheduleRequested",
+      "RescheduledSameDay",
+    ],
+    required: false,
   },
 
   // 🎯 NEW: Convocation response deadline (48 hours from email sent)
   convocationDeadline: {
     type: Date,
-    required: false
+    required: false,
   },
 
   // 🎯 NEW: When candidate responded to convocation
   convocationResponseDate: {
     type: Date,
-    required: false
+    required: false,
   },
 
   // Add this field for same-day reschedule requests
-  requestedNewTime: { 
-    type: String, 
-    required: false 
+  requestedNewTime: {
+    type: String,
+    required: false,
   },
 
   // Add to User model
   reminderSent: {
     type: Boolean,
-    default: false
+    default: false,
   },
   reminderSentDate: {
-    type: Date
+    type: Date,
   },
 
   // ✅ NEW: Charter signing fields (simplified)
   charterSigned: {
     type: Boolean,
-    default: false
+    default: false,
   },
 
   charterSignedAt: {
     type: Date,
-    default: null
+    default: null,
   },
 
   charterSigningToken: {
     type: String,
-    default: null
+    default: null,
   },
 
   charterSigningTokenExpires: {
     type: Date,
-    default: null
+    default: null,
   },
 
   // Temporary status for candidates waiting to sign charter
   pendingCharterSignature: {
     type: Boolean,
-    default: false
-  }
+    default: false,
+  },
+
+  eliminationRecords: [
+    {
+      reason: {
+        type: String,
+        enum: ["absence_threshold", "disciplinary"],
+        required: true,
+      },
+      notes: {
+        type: String,
+        default: "",
+      },
+      eliminatedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        required: true,
+      },
+      eliminatedAt: {
+        type: Date,
+        required: true,
+      },
+      concertId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Concert",
+        required: function () {
+          return this.reason === "absence_threshold";
+        },
+      },
+      eliminationType: {
+        type: String,
+        enum: ["concert_specific", "disciplinary"],
+        required: true,
+      },
+    },
+  ],
+  signedCharterId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: 'CommitmentChart',
+  default: null
+}
 });
 
 export default mongoose.model("User", userSchema);

@@ -66,16 +66,10 @@ const repetitionSchema = new mongoose.Schema({
     default: false,
   },
 
-  // ✅ NEW: Pupitre-specific modifications by chefs
-  pupitreModifications: [{
-    chefDePupitre: { 
+  managerModifications: [{
+    manager: { 
       type: mongoose.Schema.Types.ObjectId, 
       ref: 'User',
-      required: true 
-    },
-    pupitre: { 
-      type: String, 
-      enum: ['soprano', 'alto', 'ténor', 'basse'],
       required: true 
     },
     modifications: {
@@ -93,20 +87,8 @@ const repetitionSchema = new mongoose.Schema({
     notificationsSent: { type: Boolean, default: false },
     modifiedAt: { type: Date, default: Date.now }
   }],
-    // pupitres: [{
-  //   name: {
-  //     type: String,
-  //     enum: ["soprano", "alto", "ténor", "basse"],
-  //     required: true
-  //   },
-  //   // participationRate: {
-  //   //   type: Number,
-  //   //   min: 0,
-  //   //   max: 100,
-  //   //   default: 100 // 100% par défaut
-  //   // }
-  // }],
-  
+
+
 }, { timestamps: true });
 
 export default mongoose.model("Repetition", repetitionSchema);

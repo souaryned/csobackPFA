@@ -21,6 +21,10 @@ import convocationRoutes from "./routes/convocationRoutes.js";
 import auditionEvaluationRoutes from './routes/admin/auditionEvaluationRoutes.js';
 import rescheduleRoutes from "./routes/admin/rescheduleRoutes.js";
 import chefPupitreRoutes from './routes/admin/chefPupitreRoutes.js';
+import eliminationRoutes from "./routes/admin/eliminationRoutes.js";
+import commitmentChartRoutes from './routes/admin/commitmentChartRoutes.js';
+import messageRoutes from './routes/admin/messageRoutes.js';
+
 
 import { scheduleRepetitionReminders } from "./tools/cron/repetitionReminderJob.js";
 import { restoreExpiredLeaves } from "./tools/cron/restoreLeaves.js"
@@ -56,12 +60,16 @@ app.use("/convocation", convocationRoutes);
 app.use("/reschedule", rescheduleRoutes);
 app.use('/audition-evaluations', auditionEvaluationRoutes);
 app.use('/chef-pupitre', chefPupitreRoutes);
+app.use('/elimination', eliminationRoutes);
+app.use('/commitment-charts', commitmentChartRoutes);
+app.use('/messages', messageRoutes);
+
 
 // Cron job pour les rappels de répétition
 scheduleRepetitionReminders();
 // Cron job pour nettoyer les utilisateurs expirés
 startUserCleanupJob();
-
+// Cron job pour les rappels de convocation
 startReminderSystem();
 // autoDeleteExpiredConvocations.start();
 
@@ -72,7 +80,7 @@ mongoose
     console.log("Connected to database choeur_cso_bd");
     try {
       await restoreExpiredLeaves();
-      console.log("Congés expirés restaurés.");
+      // console.log("Congés expirés restaurés.");
     } catch (err) {
       console.error("Erreur restoreExpiredLeaves :", err);
     }

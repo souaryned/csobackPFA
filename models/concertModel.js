@@ -27,7 +27,16 @@ const concertSchema = new mongoose.Schema(
       },
     ],
     availableChoristes: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-    
+    finalParticipants: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+    absentChoristes: [{
+      choriste: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      reason: { 
+        type: String,
+        enum: ['did_not_mark_disponibilite', 'removed_by_admin', 'removed_by_chef', 'manual_absence'],
+        default: 'did_not_mark_disponibilite'
+      },
+      markedAt: { type: Date, default: Date.now }
+    }],
   },
   { timestamps: true }
 );

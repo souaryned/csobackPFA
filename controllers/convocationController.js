@@ -381,7 +381,7 @@ const generateTimeSlotsWithPause = (sessionStart, sessionEnd, debutPause, finPau
 // 🎯 NEW: 24h Reminder System
 export const processReminderSystem = async () => {
   try {
-    console.log('🔔 Processing 24h reminder system...');
+    // console.log('🔔 Processing 24h reminder system...');
     
     const now = new Date();
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -394,7 +394,7 @@ export const processReminderSystem = async () => {
       updatedAt: { $lt: yesterday } // Last updated more than 24h ago
     });
 
-    console.log(`📧 Found ${candidatesForReminder.length} candidates for reminder`);
+    // console.log(`📧 Found ${candidatesForReminder.length} candidates for reminder`);
 
     let remindersSent = 0;
     let movedToPending = 0;
@@ -405,7 +405,7 @@ export const processReminderSystem = async () => {
         const auditionSlot = await AuditionSlot.findOne({ candidate: candidate._id });
         
         if (!auditionSlot) {
-          console.log(`⚠️ No audition slot found for candidate ${candidate._id}`);
+          // console.log(`⚠️ No audition slot found for candidate ${candidate._id}`);
           continue;
         }
 
@@ -416,7 +416,7 @@ export const processReminderSystem = async () => {
 
         // Check if audition is today
         if (auditionDate.getTime() === today.getTime()) {
-          console.log(`📅 Audition is TODAY for ${candidate.firstName} ${candidate.lastName} - Moving to Pending`);
+          // console.log(`📅 Audition is TODAY for ${candidate.firstName} ${candidate.lastName} - Moving to Pending`);
           
           // Move to Pending and remove audition slot
           await User.findByIdAndUpdate(candidate._id, {
@@ -431,11 +431,11 @@ export const processReminderSystem = async () => {
         } else {
           // Check if reminder already sent
           if (candidate.reminderSent) {
-            console.log(`📧 Reminder already sent to ${candidate.firstName} ${candidate.lastName}`);
+            // console.log(`📧 Reminder already sent to ${candidate.firstName} ${candidate.lastName}`);
             continue;
           }
 
-          console.log(`📧 Sending reminder to ${candidate.firstName} ${candidate.lastName}`);
+          // console.log(`📧 Sending reminder to ${candidate.firstName} ${candidate.lastName}`);
           
           // Send reminder email
           const emailData = createReminderEmailTemplate({
@@ -468,7 +468,7 @@ export const processReminderSystem = async () => {
       }
     }
 
-    console.log(`✅ Reminder system completed: ${remindersSent} reminders sent, ${movedToPending} moved to Pending`);
+    // console.log(`✅ Reminder system completed: ${remindersSent} reminders sent, ${movedToPending} moved to Pending`);
     return { remindersSent, movedToPending };
 
   } catch (error) {

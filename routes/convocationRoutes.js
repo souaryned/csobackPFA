@@ -4,7 +4,6 @@ import {
   getAvailableTimes,
   getConvocationResponse, 
   handleConvocationResponse, 
-  // triggerAutoDecline
 } from '../controllers/convocationController.js';
 
 const router = express.Router();

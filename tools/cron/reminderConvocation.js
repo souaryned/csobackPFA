@@ -11,5 +11,5 @@ export const startReminderSystem = () => {
     }
   });
   
-  console.log('🔔 Reminder system started (runs every hour)');
+  // console.log('🔔 Reminder system started (runs every hour)');
 };

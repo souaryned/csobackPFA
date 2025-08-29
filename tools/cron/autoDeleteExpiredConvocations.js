@@ -14,7 +14,7 @@ const handleConvocationDecline = async (candidateId) => {
 // 🎯 Run every hour to auto-delete expired non-responsive candidates
 const autoDeleteExpiredConvocations = cron.schedule('0 * * * *', async () => {
   try {
-    console.log('🔄 Auto-cleanup: Checking for expired convocations...');
+    // console.log('🔄 Auto-cleanup: Checking for expired convocations...');
     
     const expiredCandidates = await User.find({
       role: 'candidate',
@@ -24,11 +24,11 @@ const autoDeleteExpiredConvocations = cron.schedule('0 * * * *', async () => {
     });
 
     if (expiredCandidates.length > 0) {
-      console.log(`🗑️ Auto-deleting ${expiredCandidates.length} expired candidates`);
+      // console.log(`🗑️ Auto-deleting ${expiredCandidates.length} expired candidates`);
       
       for (const candidate of expiredCandidates) {
         await handleConvocationDecline(candidate._id);
-        console.log(`🗑️ Auto-deleted: ${candidate.firstName} ${candidate.lastName}`);
+        // console.log(`🗑️ Auto-deleted: ${candidate.firstName} ${candidate.lastName}`);
       }
     }
     

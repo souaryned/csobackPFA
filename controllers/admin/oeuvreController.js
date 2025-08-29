@@ -73,38 +73,7 @@ export const getOeuvres = async (req, res) => {
   }
 };
 
-// 🗃️ Get archived oeuvres
-// export const getArchivedOeuvres = async (req, res) => {
-//   try {
-//     const archived = await Oeuvre.find({ isArchived: true });
-//     res.json(archived);
-//   } catch (error) {
-//     res.status(500).json({ message: "Erreur lors de la récupération des archivées." });
-//   }
-// };
 
-
-
-
-// 🗑️ Archive (soft-delete) an oeuvre
-// export const archiveOeuvre = async (req, res) => {
-//   try {
-//     await Oeuvre.findByIdAndUpdate(req.params.id, { isArchived: true });
-//     res.json({ message: "Œuvre archivée avec succès." });
-//   } catch (error) {
-//     res.status(500).json({ message: "Erreur lors de l’archivage." });
-//   }
-// };
-
-// 🔁 Restore an archived oeuvre
-// export const restoreOeuvre = async (req, res) => {
-//   try {
-//     await Oeuvre.findByIdAndUpdate(req.params.id, { isArchived: false });
-//     res.json({ message: "Œuvre restaurée avec succès." });
-//   } catch (error) {
-//     res.status(500).json({ message: "Erreur lors de la restauration." });
-//   }
-// };
 
 
 // 🗑️ Permanently delete an oeuvre
