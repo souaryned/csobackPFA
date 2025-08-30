@@ -11,11 +11,12 @@ export const sendNotification = async ({ email, subject, htmlContent, attachment
         user: SMTP_CONFIG.user,
         pass: SMTP_CONFIG.pass,
       },
-      tls: { rejectUnauthorized: false }, // optional
+      // tls: { rejectUnauthorized: false }, // optional
     });
 
     const mailOptions = {
-      from: SMTP_CONFIG.user,
+      // from: SMTP_CONFIG.user,
+      from: '"CSO" <csoplateform@gmail.com>',
       to: email,
       subject,
       html: htmlContent,

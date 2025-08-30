@@ -1,4 +1,3 @@
-import mongoose from "mongoose"; // 🎯 ADD THIS LINE
 import AuditionParams from "../../models/auditionParamsModel.js";
 import AuditionSlot from "../../models/auditionSlotModel.js";
 import User from "../../models/userModel.js";
