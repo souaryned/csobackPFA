@@ -2,15 +2,6 @@ node_modules/
 .vscode/
 .env
 
-# Ignore uploads, but keep the folder structure
+
 uploads/*
-!uploads/.gitkeep
-
-uploads/avatars/*
-!uploads/avatars/.gitkeep
-
-uploads/documents/*
-!uploads/documents/.gitkeep
-
-uploads/posters/*
-!uploads/posters/.gitkeep
+!uploads/**/.gitkeep
