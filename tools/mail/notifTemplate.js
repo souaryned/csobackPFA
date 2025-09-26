@@ -968,7 +968,7 @@ export const createChefRemovedNotificationTemplate = ({
   chefLastName,
   pupitre,
 }) => {
-  const subject = `Fin de mandat Chef de Pupitre ${pupitre} - CSO`;
+  const subject = `Fin de mandat Chef de Pupitre ${pupitre}`;
 
   const headerContent = `
     <h2 style="font-size:22px;color:#4b2e2e;">

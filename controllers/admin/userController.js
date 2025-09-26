@@ -37,7 +37,7 @@ export const createUser = async (req, res) => {
       phone,
       phoneCountryCode,
       professionalSituation,
-      // ✅ CHORISTE FIELDS
+      // Choriste Fields
       gender,
       birthDate,
       nationality,
@@ -49,70 +49,60 @@ export const createUser = async (req, res) => {
       isActiveInOtherChoir,
       otherChoir,
       pupitre,
+      status, // optional, admin can provide, but default to 'Junior' if not set
     } = req.body;
 
-    // 1) Required fields validation
+    // 1. Required fields validation
     if (!firstName || !lastName || !email || !role) {
       return res.status(400).json({ message: "Required fields missing." });
     }
 
-    // 2) Check for duplicate email
+    // 2. Check for duplicate email
     const existingByEmail = await User.findOne({ email });
     if (existingByEmail) {
       return res.status(409).json({ message: "Email existe deja." });
     }
 
-    // ✅ FIXED: Support all roles including choriste
+    // 3. Validate role
     if (!["manager", "chef de choeur", "choriste"].includes(role)) {
       return res.status(400).json({ message: "Invalid role specified." });
     }
 
-    // ✅ Additional choriste validation
+    // 4. Choriste-specific validation
+    let choristeStatus = status;
     if (role === "choriste") {
       if (!identityNumber) {
-        return res
-          .status(400)
-          .json({ message: "Identity number is required for choriste." });
+        return res.status(400).json({ message: "Identity number is required for choriste." });
       }
       if (!identityType) {
-        return res
-          .status(400)
-          .json({ message: "Identity type is required for choriste." });
+        return res.status(400).json({ message: "Identity type is required for choriste." });
       }
       if (!phoneCountryCode || !phone) {
-        return res
-          .status(400)
-          .json({
-            message: "Phone and country code are required for choriste.",
-          });
+        return res.status(400).json({ message: "Phone and country code are required for choriste." });
       }
       if (!professionalSituation) {
-        return res
-          .status(400)
-          .json({
-            message: "Professional situation is required for choriste.",
-          });
+        return res.status(400).json({ message: "Professional situation is required for choriste." });
       }
       if (!gender || !birthDate || !nationality || !height) {
-        return res
-          .status(400)
-          .json({ message: "Missing required fields for choriste." });
+        return res.status(400).json({ message: "Missing required fields for choriste." });
       }
-
+      // Set default status if not provided
+      if (!choristeStatus) choristeStatus = "Junior";
+      if (!["Junior", "Sénior", "Vétéran"].includes(choristeStatus)) {
+        return res.status(400).json({ message: "Status must be Junior, Sénior, or Vétéran." });
+      }
       // Check for duplicate identity number
       const existingByIdentity = await User.findOne({ identityNumber });
       if (existingByIdentity) {
-        return res
-          .status(409)
-          .json({ message: "Identity number already exists." });
+        return res.status(409).json({ message: "Identity number already exists." });
       }
     }
 
-    // 4) Generate and hash password
+    // 5. Generate and hash password
     const plainPassword = generateRandomPassword();
     const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-    // ✅ FIXED: Build user data based on role
+    // 6. Build user data
     const userData = {
       firstName,
       lastName,
@@ -121,7 +111,6 @@ export const createUser = async (req, res) => {
       password: hashedPassword,
     };
 
-    // ✅ Add choriste-specific fields if role is choriste
     if (role === "choriste") {
       userData.phone = phone;
       userData.phoneCountryCode = phoneCountryCode;
@@ -133,30 +122,28 @@ export const createUser = async (req, res) => {
       userData.identityNumber = identityNumber;
       userData.height = height;
       userData.hasMusicalKnowledge = !!hasMusicalKnowledge;
-      userData.musicalExperience = hasMusicalKnowledge
-        ? musicalExperience || ""
-        : "";
+      userData.musicalExperience = hasMusicalKnowledge ? musicalExperience || "" : "";
       userData.isActiveInOtherChoir = !!isActiveInOtherChoir;
       userData.otherChoir = isActiveInOtherChoir ? otherChoir || "" : "";
       userData.pupitre = pupitre || "";
-      userData.status = "Junior";
+      userData.status = choristeStatus; // Default or provided value
     } else {
-      // For manager and chef de choeur
       userData.phone = phone || "";
       userData.phoneCountryCode = phoneCountryCode || "";
     }
 
-    // 6) Save to database
+    // 7. Save to database
     const newUser = new User(userData);
     await newUser.save();
 
-    // 7) Send account creation email
+    // 8. Send account creation email
     const emailData = createAccountEmailTemplate({
       firstName,
       lastName,
       email,
       password: plainPassword,
       role,
+      status: userData.status || "",
     });
 
     await sendNotification({
@@ -173,99 +160,70 @@ export const createUser = async (req, res) => {
   }
 };
 
+
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
+    // Extract all fields from req.body as before
     const {
-      firstName,
-      lastName,
-      email,
-      role,
-      phone,
-      phoneCountryCode,
-      professionalSituation,
-      // ✅ CHORISTE FIELDS
-      gender,
-      birthDate,
-      nationality,
-      identityType,
-      identityNumber,
-      height,
-      hasMusicalKnowledge,
-      musicalExperience,
-      isActiveInOtherChoir,
-      otherChoir,
-      pupitre,
+      firstName, lastName, email, role, phone, phoneCountryCode, professionalSituation,
+      gender, birthDate, nationality, identityType, identityNumber, height,
+      hasMusicalKnowledge, musicalExperience, isActiveInOtherChoir, otherChoir, pupitre, status
     } = req.body;
 
-    // 1. Load existing user
+    // Load existing user
     const oldUser = await User.findById(id);
-    if (!oldUser) {
-      return res.status(404).json({ message: "User not found." });
-    }
+    if (!oldUser) return res.status(404).json({ message: "User not found." });
 
-    // 2. Prevent duplicate emails
+    // Prevent duplicate emails
     const existing = await User.findOne({ email });
     if (existing && existing._id.toString() !== id) {
       return res.status(409).json({ message: "User already exists." });
     }
 
-    // ✅ FIXED: Support all roles including choriste
+    // Validate role
     if (!["manager", "chef de choeur", "choriste"].includes(role)) {
       return res.status(400).json({ message: "Invalid role specified." });
     }
 
-    // ✅ Additional choriste validation
+    // Choriste-specific validation
+    let choristeStatus = status;
     if (role === "choriste") {
-      if (!identityNumber) {
-        return res
-          .status(400)
-          .json({ message: "Identity number is required for choriste." });
+      if (!identityNumber) return res.status(400).json({ message: "Identity number is required for choriste." });
+      if (!identityType) return res.status(400).json({ message: "Identity type is required for choriste." });
+      if (!phoneCountryCode || !phone) return res.status(400).json({ message: "Phone and country code are required for choriste." });
+      if (!professionalSituation) return res.status(400).json({ message: "Professional situation is required for choriste." });
+      if (!gender || !birthDate || !nationality || !height) return res.status(400).json({ message: "Missing required fields for choriste." });
+      if (!choristeStatus) choristeStatus = "Junior";
+      if (!["Junior", "Sénior", "Vétéran"].includes(choristeStatus)) {
+        return res.status(400).json({ message: "Status must be Junior, Sénior, or Vétéran." });
       }
-      if (!identityType) {
-        return res
-          .status(400)
-          .json({ message: "Identity type is required for choriste." });
-      }
-      if (!phoneCountryCode || !phone) {
-        return res
-          .status(400)
-          .json({
-            message: "Phone and country code are required for choriste.",
-          });
-      }
-      if (!professionalSituation) {
-        return res
-          .status(400)
-          .json({
-            message: "Professional situation is required for choriste.",
-          });
-      }
-      if (!gender || !birthDate || !nationality || !height) {
-        return res
-          .status(400)
-          .json({ message: "Missing required fields for choriste." });
-      }
-
       // Check for duplicate identity number (exclude current user)
       const existingByIdentity = await User.findOne({
         identityNumber,
         _id: { $ne: id },
       });
       if (existingByIdentity) {
-        return res
-          .status(409)
-          .json({ message: "Identity number already exists." });
+        return res.status(409).json({ message: "Identity number already exists." });
       }
     }
 
-    // ✅ Build $set payload
+    // --- Only generate and update password if email changed ---
+    let plainPassword = null;
+    let hashedPassword = null;
     const setPayload = {
       firstName,
       lastName,
       email,
       role,
     };
+
+    if (email && email !== oldUser.email) {
+      // Email changed: generate new password
+      plainPassword = generateRandomPassword();
+      hashedPassword = await bcrypt.hash(plainPassword, 10);
+      setPayload.password = hashedPassword;
+    }
 
     if (role === "choriste") {
       Object.assign(setPayload, {
@@ -283,14 +241,14 @@ export const updateUser = async (req, res) => {
         isActiveInOtherChoir,
         otherChoir: isActiveInOtherChoir ? otherChoir || "" : "",
         pupitre,
+        status: choristeStatus,
       });
     } else {
-      // For manager and chef de choeur
       setPayload.phone = phone || "";
       setPayload.phoneCountryCode = phoneCountryCode || "";
     }
 
-    // ✅ Build $unset payload
+    // Build $unset payload
     const unsetPayload = {};
     if (role !== "choriste") {
       unsetPayload.professionalSituation = "";
@@ -305,9 +263,10 @@ export const updateUser = async (req, res) => {
       unsetPayload.isActiveInOtherChoir = "";
       unsetPayload.otherChoir = "";
       unsetPayload.pupitre = "";
+      unsetPayload.status = "";
     }
 
-    // ✅ Apply update with both $set and $unset
+    // Apply update
     const updateQuery = { $set: setPayload };
     if (Object.keys(unsetPayload).length > 0) {
       updateQuery.$unset = unsetPayload;
@@ -318,14 +277,16 @@ export const updateUser = async (req, res) => {
       runValidators: true,
     });
 
-    // 6. If email changed, send notification
-    if (email && email !== oldUser.email) {
+    // --- Send notification ONLY if email changed ---
+    if (plainPassword && email && email !== oldUser.email) {
       const emailData = createAccountEmailTemplate({
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
         email: updatedUser.email,
-        password: "Votre mot de passe reste inchangé",
-        role: updatedUser.role, // ✅ Add role parameter
+        password: plainPassword,
+        role: updatedUser.role,
+        pupitre: updatedUser.pupitre,
+        status: updatedUser.status || "",
       });
       await sendNotification({
         email: updatedUser.email,
