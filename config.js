@@ -9,7 +9,7 @@ for (const envVar of requiredEnv) {
 }
 
 export const JWT_SECRET = process.env.JWT_SECRET;
-export const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
+export const FRONTEND_URL = process.env.FRONTEND_URL || "http://91.134.242.89";
 
 export const SMTP_CONFIG = {
   host: process.env.BREVO_SMTP_HOST || "smtp-relay.brevo.com",
