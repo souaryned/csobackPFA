@@ -24,3 +24,4 @@ export const BREVO_API_KEY = process.env.BREVO_API_KEY;
 
 export const MONGO_URI = process.env.MONGO_URI;
 export const PORT = process.env.PORT || 5000;
+export const FIREBASE_SERVER_KEY = process.env.FIREBASE_SERVER_KEY;

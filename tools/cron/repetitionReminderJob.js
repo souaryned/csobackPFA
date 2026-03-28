@@ -3,17 +3,18 @@ import User from "../../models/userModel.js";
 import Repetition from "../../models/repetitionModel.js";
 import { sendNotification } from "../mail/mailNotif.js";
 import { reminderRepetitionTemplateGrouped } from "../mail/notifTemplate.js";
+import { sendPushNotification } from "../push/fcmService.js"; // ✅ AJOUT
 
-// ✅ UPDATED: Only load choristes
 const loadChoralUsers = async () => {
   return await User.find({
-    role: "choriste", // ✅ Only choristes
+    role: "choriste",
     email: { $exists: true, $ne: "" },
   });
 };
 
 export const scheduleRepetitionReminders = () => {
-  // Fires every day at 08:00 and 20:00
+
+  // 🔔 1. Rappel J-1 (20h00)
   cron.schedule("0 20 * * *", async () => {
     const now = new Date();
     const tomorrow = new Date(now);
@@ -34,16 +35,15 @@ export const scheduleRepetitionReminders = () => {
 
       if (!dayBeforeReps.length) return;
 
-      const choristes = await loadChoralUsers(); // ✅ Only choristes
+      const choristes = await loadChoralUsers();
 
       for (const choriste of choristes) {
-        // ✅ Filter repetitions by choriste's pupitre
-        const relevantReps = dayBeforeReps.filter(rep => 
+        const relevantReps = dayBeforeReps.filter(rep =>
           rep.pupitres && rep.pupitres.includes(choriste.pupitre)
         );
 
-        // Only send email if there are relevant repetitions for this choriste
         if (relevantReps.length > 0) {
+          // ✅ Email (existant)
           const { subject, htmlContent, attachments } = reminderRepetitionTemplateGrouped(choriste, relevantReps);
           await sendNotification({
             email: choriste.email,
@@ -51,24 +51,35 @@ export const scheduleRepetitionReminders = () => {
             htmlContent,
             attachments,
           });
+
+          // ✅ Push notification (AJOUT)
+          if (choriste.fcmToken) {
+            const rep = relevantReps[0];
+            await sendPushNotification({
+              tokens: [choriste.fcmToken],
+              title: '⏰ Rappel — Répétition demain',
+              body: `Demain à ${rep.startTime} — ${rep.location}. Pensez à marquer votre présence !`,
+              data: {
+                type: 'reminder_day_before',
+                repetitionId: rep._id.toString(),
+              },
+            });
+          }
         }
       }
 
-      // Mark notified
       for (const rep of dayBeforeReps) {
         rep.notifiedDayBefore = true;
         await rep.save();
       }
 
-      // console.log(`[CRON 20h] Envoyé jour-avant: ${dayBeforeReps.length} répétition(s)`);
     } catch (err) {
       console.error("❌ Erreur [cron 20h]:", err);
     }
-  }, {
-    timezone: "Africa/Tunis"
-  });
+  }, { timezone: "Africa/Tunis" });
 
-  // 🔔 2. Two-hours-before reminder (runs every 15 min)
+
+  // 🔔 2. Rappel 2h avant (toutes les 15 min)
   cron.schedule("*/15 * * * *", async () => {
     const now = new Date();
 
@@ -84,16 +95,15 @@ export const scheduleRepetitionReminders = () => {
 
       if (!twoHourReps.length) return;
 
-      const choristes = await loadChoralUsers(); // ✅ Only choristes
+      const choristes = await loadChoralUsers();
 
       for (const choriste of choristes) {
-        // ✅ Filter repetitions by choriste's pupitre
-        const relevantReps = twoHourReps.filter(rep => 
+        const relevantReps = twoHourReps.filter(rep =>
           rep.pupitres && rep.pupitres.includes(choriste.pupitre)
         );
 
-        // Only send email if there are relevant repetitions for this choriste
         if (relevantReps.length > 0) {
+          // ✅ Email (existant)
           const { subject, htmlContent, attachments } = reminderRepetitionTemplateGrouped(choriste, relevantReps);
           await sendNotification({
             email: choriste.email,
@@ -101,20 +111,32 @@ export const scheduleRepetitionReminders = () => {
             htmlContent,
             attachments,
           });
+
+          // ✅ Push notification (AJOUT)
+          if (choriste.fcmToken) {
+            const rep = relevantReps[0];
+            await sendPushNotification({
+              tokens: [choriste.fcmToken],
+              title: '🔔 Répétition dans 2h',
+              body: `À ${rep.startTime} — ${rep.location}. N'oubliez pas de marquer votre présence !`,
+              data: {
+                type: 'reminder_2h',
+                repetitionId: rep._id.toString(),
+              },
+            });
+          }
         }
       }
 
-      // Mark notified
       for (const rep of twoHourReps) {
         rep.notifiedTwoHoursBefore = true;
         await rep.save();
       }
 
-      // console.log(`[CRON -2h] Envoyé pour: ${twoHourReps.length} répétition(s)`);
     } catch (err) {
       console.error("❌ Erreur [cron -2h]:", err);
     }
-  }, {
-    timezone: "Africa/Tunis"
-  });
+  }, { timezone: "Africa/Tunis" });
+
+  console.log('[CRON] Rappels répétitions programmés ✅');
 };

@@ -35,9 +35,13 @@ export const login = async (req, res) => {
       message: "Login successful",
       token,
       user: {
-        id: existingUser._id,
+        _id: existingUser._id,
         fullName: `${existingUser.firstName} ${existingUser.lastName}`,
         role: existingUser.role,
+        email: existingUser.email,           // ✅ AJOUTÉ
+        phone: existingUser.phone,           // ✅ AJOUTÉ
+        avatar: existingUser.avatar,         // ✅ AJOUTÉ — clé du fix avatar
+        status: existingUser.status,         // ✅ AJOUTÉ
       },
     });
   } catch (error) {

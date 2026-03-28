@@ -6,7 +6,7 @@ import {
   createManagerModificationTemplate
 } from "../../tools/mail/notifTemplate.js";
 import { sendNotification } from "../../tools/mail/mailNotif.js";
-
+import { sendPushNotification } from '../../tools/push/fcmService.js';
 export const createRepetition = async (req, res) => {
   try {
     const { date, startTime, endTime, pupitres } = req.body;
@@ -78,6 +78,8 @@ export const createRepetition = async (req, res) => {
     });
 
     await repetition.save();
+
+    // ✅ RÉPONSE IMMÉDIATE
     res.status(201).json({ 
       message: "Rehearsal created successfully.",
       repetition: {
@@ -85,10 +87,54 @@ export const createRepetition = async (req, res) => {
         pupitres: repetition.pupitres
       }
     });
+
+    // ✅ NOTIFICATION PUSH EN ARRIÈRE-PLAN
+    setImmediate(async () => {
+      try {
+        // Récupérer les choristes concernés par les pupitres
+        const choristes = await User.find({
+          role: 'choriste',
+          isLocked: false,
+          pupitre: { $in: uniquePupitres },
+          fcmToken: { $ne: null },
+        }).select('fcmToken');
+
+        const tokens = choristes.map(c => c.fcmToken);
+
+        if (tokens.length === 0) {
+          console.log('[FCM] Aucun choriste avec token pour cette répétition');
+          return;
+        }
+
+        // Formater la date en français
+        const dateObj = new Date(repetition.date);
+        const dateStr = dateObj.toLocaleDateString('fr-FR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+        });
+
+        await sendPushNotification({
+          tokens,
+          title: '🎵 Nouvelle répétition programmée',
+          body: `${dateStr} de ${repetition.startTime} à ${repetition.endTime} — ${repetition.location}`,
+          data: {
+            type: 'new_repetition',
+            repetitionId: repetition._id.toString(),
+          },
+        });
+
+        console.log(`[FCM] Notif envoyée à ${tokens.length} choriste(s)`);
+      } catch (e) {
+        console.error('[FCM] Erreur notif création répétition:', e);
+      }
+    });
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error creating rehearsal." });
   }
+
 };
 
 // ✅ UPDATED: updateRepetition function
