@@ -65,6 +65,14 @@ const repetitionSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  notifiedTenMinutesBefore: {
+    type: Boolean,
+    default: false,
+  },
+  notifiedTenMinutesBefore: {
+    type: Boolean,
+    default: false,
+  },
 
   managerModifications: [{
     manager: { 

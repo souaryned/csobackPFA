@@ -138,5 +138,59 @@ export const scheduleRepetitionReminders = () => {
     }
   }, { timezone: "Africa/Tunis" });
 
+  // 🔔 3. Rappel 10 minutes avant (toutes les minutes)
+  cron.schedule("* * * * *", async () => {
+    const now = new Date();
+
+    try {
+      const repetitions = await Repetition.find({ notifiedTenMinutesBefore: { $ne: true } });
+
+      const tenMinReps = repetitions.filter(rep => {
+        const [h, m] = rep.startTime.split(":").map(Number);
+        const start = new Date(rep.date);
+        start.setHours(h, m, 0, 0);
+        const diffInMin = (start - now) / 60000;
+        // Fenêtre : entre 9 et 11 minutes avant
+        return diffInMin >= 9 && diffInMin <= 11;
+      });
+
+      if (!tenMinReps.length) return;
+
+      for (const rep of tenMinReps) {
+        // Récupérer les choristes concernés avec fcmToken
+        const choristes = await User.find({
+          role: 'choriste',
+          isLocked: false,
+          pupitre: { $in: rep.pupitres },
+          fcmToken: { $ne: null },
+        }).select('fcmToken firstName');
+
+        const tokens = choristes.map(c => c.fcmToken).filter(Boolean);
+        if (tokens.length === 0) continue;
+
+        const dateStr = new Date(rep.date).toLocaleDateString('fr-FR', {
+          weekday: 'long', day: 'numeric', month: 'long',
+        });
+
+        await sendPushNotification({
+          tokens,
+          title: '⏰ Répétition dans 10 minutes !',
+          body: `La répétition commence à ${rep.startTime} — ${rep.location}. Préparez-vous !`,
+          data: {
+            type: 'reminder_10min',
+            repetitionId: rep._id.toString(),
+          },
+        });
+
+        rep.notifiedTenMinutesBefore = true;
+        await rep.save();
+
+        console.log(`[CRON] ✅ Notif 10min envoyée — répétition ${rep._id} à ${rep.startTime}`);
+      }
+    } catch (err) {
+      console.error("❌ Erreur [cron -10min]:", err);
+    }
+  }, { timezone: "Africa/Tunis" });
+
   console.log('[CRON] Rappels répétitions programmés ✅');
 };
