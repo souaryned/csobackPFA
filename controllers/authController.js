@@ -445,6 +445,32 @@ export const checkEmailConfirmed = async (req, res) => {
   }
 };
 
+///////////////////////// SAVE FCM TOKEN /////////////////////////
+// PATCH /auth/fcm-token
+// Appelé par Flutter après login et à chaque refresh du token FCM.
+// Token vide = logout Flutter → on supprime le token de la BDD.
+export const saveFcmToken = async (req, res) => {
+  try {
+    const userId = req.auth?.userId;
+    if (!userId) return res.status(401).json({ message: 'Non authentifié' });
+
+    const { fcmToken } = req.body;
+
+    if (!fcmToken || fcmToken.trim() === '') {
+      // Logout Flutter → supprimer le token FCM
+      await User.findByIdAndUpdate(userId, { $unset: { fcmToken: '' } });
+      return res.status(200).json({ message: 'Token FCM supprimé' });
+    }
+
+    await User.findByIdAndUpdate(userId, { fcmToken: fcmToken.trim() });
+    return res.status(200).json({ message: 'Token FCM sauvegardé' });
+
+  } catch (error) {
+    console.error('[FCM] Erreur saveFcmToken:', error);
+    return res.status(500).json({ message: 'Erreur serveur' });
+  }
+};
+
 export const confirmEmail = async (req, res) => {
   const { token } = req.query;
 

@@ -4,7 +4,6 @@ import User from '../models/userModel.js';
 import { JWT_SECRET } from '../config.js';
 
 export const loggedMiddleware = async (req, res, next) => {
-
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -24,9 +23,13 @@ export const loggedMiddleware = async (req, res, next) => {
       return res.status(403).json({ message: 'Account is locked.' });
     }
 
+    // ✅ req.user = document MongoDB complet
+    //    → donne accès à user.role, user.isChefDePupitre, user.pupitre, etc.
+    req.user = user;
+
     req.auth = {
       userId: user._id,
-      role: user.role
+      role: user.role,
     };
 
     next();
