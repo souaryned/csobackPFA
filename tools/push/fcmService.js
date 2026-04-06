@@ -11,6 +11,15 @@ if (!admin.apps.length) {
   });
 }
 
+// Codes FCM qui signifient que le token est définitivement invalide
+const INVALID_TOKEN_CODES = [
+  'messaging/registration-token-not-registered',
+  'messaging/invalid-registration-token',
+  'messaging/mismatched-credential',
+  'NotRegistered',
+  'InvalidRegistration',
+];
+
 export const sendPushNotification = async ({ tokens, title, body, data = {} }) => {
   if (!tokens || tokens.length === 0) return;
 
@@ -40,12 +49,28 @@ export const sendPushNotification = async ({ tokens, title, body, data = {} }) =
 
     console.log(`[FCM] ✅ ${response.successCount} envoyée(s), ❌ ${response.failureCount} échec(s)`);
 
-    // Nettoyer les tokens invalides
+    // ── Nettoyer automatiquement les tokens invalides en BDD ──────────
+    const invalidTokens = [];
     response.responses.forEach((resp, idx) => {
       if (!resp.success) {
-        console.error(`[FCM] Token invalide [${idx}]:`, resp.error?.message);
+        const errCode = resp.error?.code ?? resp.error?.message ?? '';
+        const isInvalid = INVALID_TOKEN_CODES.some(c => errCode.includes(c));
+        console.error(`[FCM] Token invalide [${idx}]: ${errCode}`);
+        if (isInvalid) {
+          invalidTokens.push(validTokens[idx]);
+        }
       }
     });
+
+    if (invalidTokens.length > 0) {
+      console.log(`[FCM] 🧹 Suppression de ${invalidTokens.length} token(s) invalide(s) en BDD`);
+      // Import dynamique pour éviter la dépendance circulaire
+      const { default: User } = await import('../../models/userModel.js');
+      await User.updateMany(
+        { fcmToken: { $in: invalidTokens } },
+        { $unset: { fcmToken: '' } }
+      );
+    }
 
     return response;
   } catch (e) {

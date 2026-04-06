@@ -22,7 +22,6 @@ export const isChorister = (req, res, next) => {
   next();
 };
 
-
 export const isChefDeChoeur = (req, res, next) => {
   if (req.auth.role !== "chef de choeur") {
     return res.status(403).json({ error: "Accès refusé. Chef de chœur uniquement." });
@@ -30,9 +29,7 @@ export const isChefDeChoeur = (req, res, next) => {
   next();
 };
 
-
-
-// 📌 Allow only choristers or admins
+// 📌 Allow only choristers or admins or managers
 export const isChoristerOrAdminOrManager = (req, res, next) => {
   const { role } = req.auth;
   if (role !== "choriste" && role !== "admin" && role !== "manager") {
@@ -41,9 +38,7 @@ export const isChoristerOrAdminOrManager = (req, res, next) => {
   next();
 };
 
-
-
-// 📌 Allow only choristers or admins
+// 📌 Allow only managers or admins
 export const isManagerOrAdmin = (req, res, next) => {
   const { role } = req.auth;
   if (role !== "manager" && role !== "admin") {
@@ -52,7 +47,6 @@ export const isManagerOrAdmin = (req, res, next) => {
   next();
 };
 
-
 export const isChoristeOrChef = (req, res, next) => {
   const { role } = req.auth;
   if (role !== "choriste" && role !== "chef de choeur") {
@@ -60,7 +54,6 @@ export const isChoristeOrChef = (req, res, next) => {
   }
   next();
 };
-
 
 export const isAdminOrChef = (req, res, next) => {
   const { role } = req.auth;
@@ -78,17 +71,45 @@ export const isManagerOrChef = (req, res, next) => {
   next();
 };
 
-
-
-// 📌 Allow all known roles: admin, manager, choriste
+// 📌 Allow all known roles
 export const allowAll = (req, res, next) => {
   const { role } = req.auth;
-  if (!["admin", "manager", "choriste","chef de choeur"].includes(role)) {
+  if (!["admin", "manager", "choriste", "chef de choeur"].includes(role)) {
     return res.status(403).json({ error: "Accès refusé. Rôle non autorisé." });
   }
   next();
 };
 
+// 📌 Réservé aux chefs de pupitre
+export const isChefDePupitre = (req, res, next) => {
+  if (!req.user || !req.user.isChefDePupitre) {
+    return res.status(403).json({
+      message: "Accès refusé. Réservé aux chefs de pupitre.",
+    });
+  }
+  next();
+};
 
+// 📌 Réservé aux choristes
+export const isChoriste = (req, res, next) => {
+  if (!req.user || req.user.role !== "choriste") {
+    return res.status(403).json({
+      message: "Accès refusé. Réservé aux choristes.",
+    });
+  }
+  next();
+};
 
+// ✅ FIX — Admin OU chef de pupitre (isChefDePupitre=true suffit)
+// req.user est le document MongoDB complet (injecté par loggedMiddleware)
+export const isAdminOrChefPupitre = (req, res, next) => {
+  const role = req.user?.role;
+  const isChefDePup = req.user?.isChefDePupitre === true;
 
+  if (role === "admin" || isChefDePup) {
+    return next();
+  }
+  return res.status(403).json({
+    message: "Accès réservé aux admins et chefs de pupitre.",
+  });
+};
