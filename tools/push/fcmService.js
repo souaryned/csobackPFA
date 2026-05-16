@@ -1,21 +1,17 @@
-// ============================================================
-// fcmService.js  (anciennement notificationsService.js)
-// ⚠️  Renommer ce fichier en fcmService.js pour correspondre
-//     aux imports du cron : import { sendPushNotification } from "../push/fcmService.js"
-// ============================================================
-
 import admin from "firebase-admin";
 import { createRequire } from "module";
 import User from "../../models/userModel.js";
 
 const require = createRequire(import.meta.url);
 
-// ── Initialisation Firebase Admin (une seule fois) ──────────
+// ── Initialisation Firebase Admin ────────────────────────────
 if (!admin.apps.length) {
   const serviceAccount = require("../serviceAccountKey.json");
+
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
   });
+
   console.log("[FCM] ✅ Firebase Admin initialisé.");
 }
 
@@ -32,18 +28,16 @@ export const NOTIF_TYPES = {
   CONCERT_CANCELLED: "concert_cancelled",
 };
 
-/**
- * Envoie une notification push FCM.
- *
- * @param {Object}   params
- * @param {string[]} params.tokens  - Tokens FCM
- * @param {string}   params.title   - Titre
- * @param {string}   params.body    - Corps
- * @param {Object}   [params.data]  - Données libres — DOIT contenir { type }
- *
- * ⚠️  Le champ "type" dans data est OBLIGATOIRE pour que Flutter
- *     navigue vers le bon écran. Sans lui, le tap ne fait rien.
- */
+// ── Codes tokens invalides ───────────────────────────────────
+const INVALID_TOKEN_CODES = [
+  "messaging/registration-token-not-registered",
+  "messaging/invalid-registration-token",
+  "messaging/mismatched-credential",
+  "NotRegistered",
+  "InvalidRegistration",
+];
+
+// ── Fonction principale ──────────────────────────────────────
 export const sendPushNotification = async ({
   tokens,
   title,
@@ -53,142 +47,165 @@ export const sendPushNotification = async ({
   if (!tokens || tokens.length === 0) return;
 
   const validTokens = tokens.filter(Boolean);
+
   if (validTokens.length === 0) return;
 
   if (!data.type) {
     console.warn(
-      "[FCM] ⚠️  data.type manquant — la navigation Flutter ne fonctionnera pas !",
+      "[FCM] ⚠️ data.type manquant — navigation Flutter peut échouer !",
     );
   }
 
-  // ── Convertir data en strings (obligatoire FCM) ─────────
+  // Convertir data en strings (obligatoire FCM)
   const stringData = {
-    click_action: "FLUTTER_NOTIFICATION_CLICK", // ✅ obligatoire Flutter
+    click_action: "FLUTTER_NOTIFICATION_CLICK",
     ...Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])),
   };
 
-  console.log(
-    `[FCM] 📤 Envoi "${title}" → ${validTokens.length} token(s) | type: ${stringData.type ?? "?"}`,
-  );
+  console.log(`[FCM] 📤 Envoi "${title}" → ${validTokens.length} token(s)`);
 
   const CHUNK = 500;
+
   let totalSuccess = 0;
   let totalFailure = 0;
+
   const invalidTokens = [];
 
   try {
     for (let i = 0; i < validTokens.length; i += CHUNK) {
       const chunk = validTokens.slice(i, i + CHUNK);
 
-      const response = await admin.messaging().sendEachForMulticast({
-        tokens: chunk,
-        notification: { title, body },
+      const message = {
+        notification: {
+          title,
+          body,
+        },
+
         data: stringData,
+
         android: {
           priority: "high",
           notification: {
             sound: "default",
-            channel_id: "cso_high_importance", // ✅ canal Flutter
+            channel_id: "cso_high_importance",
           },
         },
+
         apns: {
-          payload: { aps: { sound: "default" } },
+          payload: {
+            aps: {
+              sound: "default",
+            },
+          },
         },
-      });
+
+        tokens: chunk,
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(message);
 
       totalSuccess += response.successCount;
       totalFailure += response.failureCount;
 
       response.responses.forEach((resp, idx) => {
         if (!resp.success) {
-          const code = resp.error?.code ?? "";
-          console.error(`[FCM] ❌ Token[${idx}]: ${resp.error?.message}`);
+          const errCode = resp.error?.code ?? resp.error?.message ?? "";
 
-          if (
-            code === "messaging/invalid-registration-token" ||
-            code === "messaging/registration-token-not-registered"
-          ) {
+          console.error(`[FCM] ❌ Token invalide [${idx}] : ${errCode}`);
+
+          const isInvalid = INVALID_TOKEN_CODES.some((c) =>
+            errCode.includes(c),
+          );
+
+          if (isInvalid) {
             invalidTokens.push(chunk[idx]);
           }
         }
       });
     }
 
-    // ── Nettoyer les tokens invalides en DB ───────────────
+    // ── Nettoyage DB ─────────────────────────────────────────
     if (invalidTokens.length > 0) {
       await User.updateMany(
         { fcmToken: { $in: invalidTokens } },
         { $set: { fcmToken: null } },
       );
-      console.log(
-        `[FCM] 🗑️  ${invalidTokens.length} token(s) invalide(s) supprimé(s).`,
-      );
+
+      console.log(`[FCM] 🗑️ ${invalidTokens.length} token(s) supprimé(s)`);
     }
 
     console.log(
       `[FCM] ✅ ${totalSuccess} envoyée(s) | ❌ ${totalFailure} échec(s)`,
     );
-    return { successCount: totalSuccess, failureCount: totalFailure };
+
+    return {
+      successCount: totalSuccess,
+      failureCount: totalFailure,
+    };
   } catch (err) {
-    console.error("[FCM] 🔥 Erreur critique:", err);
+    console.error("[FCM] 🔥 Erreur critique :", err);
     throw err;
   }
 };
 
-// ── Helpers prêts à l'emploi ────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────
 
-/** Nouvelle répétition créée */
 export const notifyNewRepetition = (tokens, rep) =>
   sendPushNotification({
     tokens,
     title: "🎵 Nouvelle répétition ajoutée",
     body: `Le ${_formatDate(rep.date)} à ${rep.startTime} — ${rep.location}`,
-    data: { type: NOTIF_TYPES.NEW_REPETITION, repetitionId: String(rep._id) },
+    data: {
+      type: NOTIF_TYPES.NEW_REPETITION,
+      repetitionId: String(rep._id),
+    },
   });
 
-/** Répétition modifiée */
 export const notifyRepetitionUpdated = (tokens, rep) =>
   sendPushNotification({
     tokens,
     title: "✏️ Répétition modifiée",
-    body: `Nouvelle date : ${_formatDate(rep.date)} à ${rep.startTime} — ${rep.location}`,
+    body: `Nouvelle date : ${_formatDate(rep.date)} à ${rep.startTime}`,
     data: {
       type: NOTIF_TYPES.REPETITION_UPDATED,
       repetitionId: String(rep._id),
     },
   });
 
-/** Répétition annulée */
 export const notifyRepetitionCancelled = (tokens, rep) =>
   sendPushNotification({
     tokens,
     title: "❌ Répétition annulée",
-    body: `La répétition du ${_formatDate(rep.date)} à ${rep.startTime} est annulée.`,
+    body: `La répétition du ${_formatDate(rep.date)} est annulée.`,
     data: {
       type: NOTIF_TYPES.REPETITION_CANCELLED,
       repetitionId: String(rep._id),
     },
   });
 
-/** Nouveau concert */
 export const notifyNewConcert = (tokens, concert) =>
   sendPushNotification({
     tokens,
     title: "🎤 Nouveau concert",
-    body: `${concert.title} — Le ${_formatDate(concert.dateHeure)}`,
-    data: { type: NOTIF_TYPES.NEW_CONCERT, concertId: String(concert._id) },
+    body: `${concert.title} — ${_formatDate(concert.dateHeure)}`,
+    data: {
+      type: NOTIF_TYPES.NEW_CONCERT,
+      concertId: String(concert._id),
+    },
   });
 
-/** Concert modifié */
 export const notifyUpdatedConcert = (tokens, concert) =>
   sendPushNotification({
     tokens,
     title: "✏️ Concert modifié",
     body: `${concert.title} a été mis à jour.`,
-    data: { type: NOTIF_TYPES.CONCERT_UPDATED, concertId: String(concert._id) },
+    data: {
+      type: NOTIF_TYPES.CONCERT_UPDATED,
+      concertId: String(concert._id),
+    },
   });
 
-// ── Utilitaire interne ───────────────────────────────────────
+// ── Utilitaire ───────────────────────────────────────────────
 const _formatDate = (date) =>
   new Date(date).toLocaleDateString("fr-FR", {
     weekday: "long",
