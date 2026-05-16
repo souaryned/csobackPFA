@@ -166,10 +166,26 @@ const userSchema = new mongoose.Schema({
     default: null,
   },
   fcmToken: {
-  type: String,
-  default: null,
-},
+    type: String,
+    default: null,
+  },
 
+  // ✅ NOUVEAU : Préférences de rappel personnalisées
+  // ✅ Remplacer l'ancien reminderPreferences par :
+  reminderPreferences: {
+    dayBefore: {
+      enabled: { type: Boolean, default: true },
+      minutesBefore: { type: Number, default: 1440, min: 1 }, // ✅ ajouté
+    },
+    twoHours: {
+      enabled: { type: Boolean, default: true },
+      minutesBefore: { type: Number, default: 120, min: 1 }, // ✅ min: 1 (plus de max)
+    },
+    tenMinutes: {
+      enabled: { type: Boolean, default: true },
+      minutesBefore: { type: Number, default: 10, min: 1 }, // ✅ min: 1 (plus de max)
+    },
+  },
   rejectionReason: {
     type: String,
     default: "",
@@ -296,10 +312,10 @@ const userSchema = new mongoose.Schema({
     },
   ],
   signedCharterId: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'CommitmentChart',
-  default: null
-}
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "CommitmentChart",
+    default: null,
+  },
 });
 
 export default mongoose.model("User", userSchema);

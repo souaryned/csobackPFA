@@ -1,166 +1,337 @@
+// ============================================================
+// repetitionController.js
+// ✅ FIXES :
+//   - sendPushInBackground : getFcmTokensForPupitres() déplacé
+//     DANS le setImmediate pour ne pas bloquer la réponse HTTP
+//   - Toutes les notifications (création, modif, suppression)
+//     sont correctement envoyées en arrière-plan
+// ============================================================
+
 import Repetition from "../../models/repetitionModel.js";
 import User from "../../models/userModel.js";
 import Config from "../../models/configModel.js";
 import Concert from "../../models/concertModel.js";
-import {
-  createManagerModificationTemplate
-} from "../../tools/mail/notifTemplate.js";
+import { createManagerModificationTemplate } from "../../tools/mail/notifTemplate.js";
 import { sendNotification } from "../../tools/mail/mailNotif.js";
-import { sendPushNotification } from '../../tools/push/fcmService.js';
+import { sendPushNotification } from "../../tools/push/fcmService.js";
 
-// ─────────────────────────────────────────────
-// HELPER: check if "now" falls inside the repetition window
-// Returns { allowed: bool, reason?: string }
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────────────────────
+
+const VALID_PUPITRES = ["soprano", "alto", "ténor", "basse"];
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS PRIVÉS
+// ─────────────────────────────────────────────────────────────
+
 const isInsideRepetitionWindow = (repetition) => {
   const now = new Date();
 
-  // Parse the repetition date (strip time part)
   const repDate = new Date(repetition.date);
-  const repDateOnly = new Date(repDate.getFullYear(), repDate.getMonth(), repDate.getDate());
-  const todayOnly   = new Date(now.getFullYear(),  now.getMonth(),  now.getDate());
+  const repDateOnly = new Date(
+    repDate.getFullYear(),
+    repDate.getMonth(),
+    repDate.getDate(),
+  );
+  const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-  // Must be the same calendar day
   if (repDateOnly.getTime() !== todayOnly.getTime()) {
     const isPast = repDateOnly < todayOnly;
     return {
       allowed: false,
       reason: isPast
         ? "Cette répétition est déjà passée."
-        : "Cette répétition n'a pas encore commencé."
+        : "Cette répétition n'a pas encore commencé.",
     };
   }
 
-  // Parse startTime / endTime (format "HH:MM")
-  const [startH, startM] = repetition.startTime.split(':').map(Number);
-  const [endH,   endM]   = repetition.endTime.split(':').map(Number);
+  const [startH, startM] = repetition.startTime.split(":").map(Number);
+  const [endH, endM] = repetition.endTime.split(":").map(Number);
 
-  const windowStart = new Date(repDate.getFullYear(), repDate.getMonth(), repDate.getDate(), startH, startM, 0);
-  let   windowEnd   = new Date(repDate.getFullYear(), repDate.getMonth(), repDate.getDate(), endH,   endM,   0);
+  const windowStart = new Date(
+    repDate.getFullYear(),
+    repDate.getMonth(),
+    repDate.getDate(),
+    startH,
+    startM,
+    0,
+  );
+  let windowEnd = new Date(
+    repDate.getFullYear(),
+    repDate.getMonth(),
+    repDate.getDate(),
+    endH,
+    endM,
+    0,
+  );
 
-  // Handles overnight repetitions (e.g. 23:00 → 01:00)
   if (windowEnd <= windowStart) windowEnd.setDate(windowEnd.getDate() + 1);
 
   if (now < windowStart) {
     return {
       allowed: false,
-      reason: `La répétition commence à ${repetition.startTime}. Vous pourrez pointer votre présence à partir de cette heure.`
+      reason: `La répétition commence à ${repetition.startTime}. Vous pourrez pointer votre présence à partir de cette heure.`,
     };
   }
   if (now > windowEnd) {
     return {
       allowed: false,
-      reason: `La répétition s'est terminée à ${repetition.endTime}. Il n'est plus possible de pointer votre présence.`
+      reason: `La répétition s'est terminée à ${repetition.endTime}. Il n'est plus possible de pointer votre présence.`,
     };
   }
 
   return { allowed: true };
 };
 
+const validateTimeRange = (date, startTime, endTime) => {
+  if (!date || !startTime || !endTime) return { valid: true };
+
+  const [startH, startM] = startTime.split(":").map(Number);
+  const [endH, endM] = endTime.split(":").map(Number);
+
+  const start = new Date(date);
+  start.setHours(startH, startM, 0, 0);
+
+  const end = new Date(date);
+  end.setHours(endH, endM, 0, 0);
+
+  if (end <= start) end.setDate(end.getDate() + 1);
+  if (end <= start)
+    return {
+      valid: false,
+      error: "L'heure de fin doit être après l'heure de début.",
+    };
+
+  return { valid: true };
+};
+
+const validatePupitres = (pupitres) => {
+  if (!pupitres || !Array.isArray(pupitres) || pupitres.length === 0) {
+    return {
+      valid: false,
+      error: "Au moins un pupitre doit être sélectionné.",
+    };
+  }
+
+  const invalid = pupitres.filter((p) => !VALID_PUPITRES.includes(p));
+  if (invalid.length > 0) {
+    return {
+      valid: false,
+      error: `Pupitres invalides : ${invalid.join(", ")}`,
+    };
+  }
+
+  return { valid: true, uniquePupitres: [...new Set(pupitres)] };
+};
+
+// ✅ FIX : getFcmTokensForPupitres() est maintenant appelé DANS
+// le setImmediate, pas avant. Cela évite de bloquer la réponse HTTP.
+const sendPushInBackground = (pupitres, buildPayload) => {
+  setImmediate(async () => {
+    try {
+      const tokens = await getFcmTokensForPupitres(pupitres);
+      if (!tokens || tokens.length === 0) return;
+      const payload = buildPayload(tokens);
+      await sendPushNotification(payload);
+    } catch (e) {
+      console.error("[FCM] Erreur notification push:", e);
+    }
+  });
+};
+
+const getFcmTokensForPupitres = async (pupitres) => {
+  const choristes = await User.find({
+    role: "choriste",
+    isLocked: { $ne: true },
+    pupitre: { $in: pupitres },
+    fcmToken: { $ne: null },
+  }).select("fcmToken");
+
+  return choristes.map((c) => c.fcmToken).filter(Boolean);
+};
+
+const formatDateFr = (date) =>
+  new Date(date).toLocaleDateString("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+// ─────────────────────────────────────────────────────────────
+// HELPERS RAPPORT
+// ─────────────────────────────────────────────────────────────
+
+const getFilterValue = (query) => {
+  const { filterType, pupitre, choristeId, date, dateFrom, dateTo, concertId } =
+    query;
+  switch (filterType) {
+    case "general":
+      return "Tous les choristes";
+    case "pupitre":
+      return pupitre || "Pupitre non spécifié";
+    case "choriste":
+      return choristeId || "Choriste non spécifié";
+    case "date":
+      return date || "Date non spécifiée";
+    case "dateFrom":
+      return `Depuis ${dateFrom || "date non spécifiée"}`;
+    case "season":
+      return "Depuis début de saison";
+    case "dateRange":
+      return `Du ${dateFrom || "?"} au ${dateTo || "?"}`;
+    case "programme":
+      return concertId || "Programme non spécifié";
+    default:
+      return "Filtre inconnu";
+  }
+};
+
+const getPeriodInfo = (filterType, query) => {
+  const { date, dateFrom, dateTo } = query;
+  const today = new Date().toISOString().split("T")[0];
+
+  switch (filterType) {
+    case "date":
+      return { start: date, end: date, type: "single-date" };
+    case "dateFrom":
+      return { start: dateFrom, end: today, type: "from-date" };
+    case "season": {
+      const now = new Date();
+      const yr = now.getFullYear();
+      const seasonStart =
+        now.getMonth() >= 8 ? `${yr}-09-01` : `${yr - 1}-09-01`;
+      return { start: seasonStart, end: today, type: "season" };
+    }
+    case "dateRange":
+      return { start: dateFrom, end: dateTo, type: "range" };
+    default:
+      return { start: null, end: null, type: "all-time" };
+  }
+};
+
+const getAbsenceReasonMessage = (reason) => {
+  switch (reason) {
+    case "did_not_mark_disponibilite":
+      return "N'a pas marqué sa disponibilité";
+    case "removed_by_admin":
+      return "Retiré par admin";
+    case "removed_by_chef":
+      return "Retiré par chef de pupitre";
+    case "manual_absence":
+      return "Absence manuelle";
+    default:
+      return "Absent";
+  }
+};
+
+const VALID_FILTER_TYPES = [
+  "general",
+  "pupitre",
+  "choriste",
+  "date",
+  "dateFrom",
+  "season",
+  "dateRange",
+  "programme",
+];
+
+const buildDateFilters = (filterType, query) => {
+  const { date, dateFrom, dateTo, concertId } = query;
+
+  let repetitionQuery = {};
+  let dateFilter = {};
+
+  switch (filterType) {
+    case "date": {
+      const target = new Date(date);
+      const nextDay = new Date(target);
+      nextDay.setDate(nextDay.getDate() + 1);
+      dateFilter = { date: { $gte: target, $lt: nextDay } };
+      break;
+    }
+    case "dateFrom":
+      dateFilter = { date: { $gte: new Date(dateFrom) } };
+      break;
+    case "season": {
+      const now = new Date();
+      const yr = now.getFullYear();
+      const ss =
+        now.getMonth() >= 8 ? new Date(yr, 8, 1) : new Date(yr - 1, 8, 1);
+      dateFilter = { date: { $gte: ss } };
+      break;
+    }
+    case "dateRange":
+      dateFilter = {
+        date: { $gte: new Date(dateFrom), $lte: new Date(dateTo) },
+      };
+      break;
+    case "programme":
+      repetitionQuery.concert = concertId;
+      break;
+    default:
+      break;
+  }
+
+  return { repetitionQuery, dateFilter };
+};
+
+// ─────────────────────────────────────────────────────────────
+// CRUD RÉPÉTITIONS
+// ─────────────────────────────────────────────────────────────
+
 export const createRepetition = async (req, res) => {
   try {
     const { date, startTime, endTime, pupitres } = req.body;
 
-    // 1) Time validation
-    if (startTime && endTime && date) {
-      const [startHour, startMin] = startTime.split(":").map(Number);
-      const [endHour, endMin] = endTime.split(":").map(Number);
+    const timeCheck = validateTimeRange(date, startTime, endTime);
+    if (!timeCheck.valid)
+      return res.status(400).json({ message: timeCheck.error });
 
-      const start = new Date(date);
-      start.setHours(startHour, startMin, 0, 0);
-
-      let end = new Date(date);
-      end.setHours(endHour, endMin, 0, 0);
-
-      if (end <= start) {
-        end.setDate(end.getDate() + 1);
-      }
-
-      if (end <= start) {
-        return res.status(400).json({
-          message: "End time must be after start time.",
-        });
-      }
-    }
-
-    if (!pupitres || !Array.isArray(pupitres) || pupitres.length === 0) {
-      return res.status(400).json({
-        message: "At least one voice part (pupitre) must be selected.",
-      });
-    }
-
-    const validPupitres = ["soprano", "alto", "ténor", "basse"];
-    const invalidPupitres = pupitres.filter(p => !validPupitres.includes(p));
-    if (invalidPupitres.length > 0) {
-      return res.status(400).json({
-        message: `Invalid voice parts: ${invalidPupitres.join(', ')}`,
-      });
-    }
-
-    const uniquePupitres = [...new Set(pupitres)];
+    const pupitreCheck = validatePupitres(pupitres);
+    if (!pupitreCheck.valid)
+      return res.status(400).json({ message: pupitreCheck.error });
+    const { uniquePupitres } = pupitreCheck;
 
     const existingReps = await Repetition.find({ date });
-    const hasConflictOnDate = existingReps.some((rep) => {
-      if (!Array.isArray(rep.pupitres)) return false;
-      return uniquePupitres.some(p => rep.pupitres.includes(p));
-    });
-
-    if (hasConflictOnDate) {
+    const hasConflict = existingReps.some(
+      (rep) =>
+        Array.isArray(rep.pupitres) &&
+        uniquePupitres.some((p) => rep.pupitres.includes(p)),
+    );
+    if (hasConflict) {
       return res.status(409).json({
-        message: "A rehearsal with overlapping voice parts already exists on this date. Each voice part can only have one rehearsal per day.",
+        message:
+          "Un pupitre de cette répétition a déjà une répétition ce jour-là.",
       });
     }
 
     const repetition = new Repetition({
       ...req.body,
-      pupitres: uniquePupitres
+      pupitres: uniquePupitres,
     });
-
     await repetition.save();
 
-    res.status(201).json({ 
-      message: "Rehearsal created successfully.",
-      repetition: {
-        _id: repetition._id,
-        pupitres: repetition.pupitres
-      }
+    res.status(201).json({
+      message: "Répétition créée avec succès.",
+      repetition: { _id: repetition._id, pupitres: repetition.pupitres },
     });
 
-    // ✅ NOTIFICATION PUSH EN ARRIÈRE-PLAN
-    setImmediate(async () => {
-      try {
-        const choristes = await User.find({
-          role: 'choriste',
-          isLocked: false,
-          pupitre: { $in: uniquePupitres },
-          fcmToken: { $ne: null },
-        }).select('fcmToken');
-
-        const tokens = choristes.map(c => c.fcmToken);
-        if (tokens.length === 0) return;
-
-        const dateObj = new Date(repetition.date);
-        const dateStr = dateObj.toLocaleDateString('fr-FR', {
-          weekday: 'long', day: 'numeric', month: 'long',
-        });
-
-        await sendPushNotification({
-          tokens,
-          title: '🎵 Nouvelle répétition programmée',
-          body: `${dateStr} de ${repetition.startTime} à ${repetition.endTime} — ${repetition.location}`,
-          data: {
-            type: 'new_repetition',
-            repetitionId: repetition._id.toString(),
-          },
-        });
-      } catch (e) {
-        console.error('[FCM] Erreur notif création répétition:', e);
-      }
-    });
-
+    // ✅ Notification création — tokens récupérés DANS le background
+    sendPushInBackground(uniquePupitres, (tokens) => ({
+      tokens,
+      title: "🎵 Nouvelle répétition programmée",
+      body: `${formatDateFr(repetition.date)} de ${repetition.startTime} à ${repetition.endTime} — ${repetition.location}`,
+      data: {
+        type: "new_repetition",
+        repetitionId: repetition._id.toString(),
+      },
+    }));
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating rehearsal." });
+    console.error("[createRepetition]", error);
+    res
+      .status(500)
+      .json({ message: "Erreur lors de la création de la répétition." });
   }
 };
 
@@ -168,482 +339,378 @@ export const updateRepetition = async (req, res) => {
   try {
     const { date, startTime, endTime, pupitres } = req.body;
 
-    if (startTime && endTime && date) {
-      const [startH, startM] = startTime.split(":").map(Number);
-      const [endH, endM] = endTime.split(":").map(Number);
+    const timeCheck = validateTimeRange(date, startTime, endTime);
+    if (!timeCheck.valid)
+      return res.status(400).json({ message: timeCheck.error });
 
-      const start = new Date(date);
-      start.setHours(startH, startM, 0, 0);
+    const pupitreCheck = validatePupitres(pupitres);
+    if (!pupitreCheck.valid)
+      return res.status(400).json({ message: pupitreCheck.error });
+    const { uniquePupitres } = pupitreCheck;
 
-      let end = new Date(date);
-      end.setHours(endH, endM, 0, 0);
-
-      if (end <= start) end.setDate(end.getDate() + 1);
-      if (end <= start) {
-        return res.status(400).json({ 
-          message: "L'heure de fin doit être après l'heure de début." 
-        });
-      }
-    }
-
-    if (!pupitres || !Array.isArray(pupitres) || pupitres.length === 0) {
-      return res.status(400).json({
-        message: "At least one voice part (pupitre) must be selected.",
-      });
-    }
-
-    const validPupitres = ["soprano", "alto", "ténor", "basse"];
-    const invalidPupitres = pupitres.filter(p => !validPupitres.includes(p));
-    if (invalidPupitres.length > 0) {
-      return res.status(400).json({
-        message: `Invalid voice parts: ${invalidPupitres.join(', ')}`,
-      });
-    }
-
-    const uniquePupitres = [...new Set(pupitres)];
-
-    const existingReps = await Repetition.find({ 
+    const existingReps = await Repetition.find({
       date,
-      _id: { $ne: req.params.id }
+      _id: { $ne: req.params.id },
     });
-
-    const hasConflictOnDate = existingReps.some((rep) => {
-      if (!Array.isArray(rep.pupitres)) return false;
-      return uniquePupitres.some(p => rep.pupitres.includes(p));
-    });
-
-    if (hasConflictOnDate) {
+    const hasConflict = existingReps.some(
+      (rep) =>
+        Array.isArray(rep.pupitres) &&
+        uniquePupitres.some((p) => rep.pupitres.includes(p)),
+    );
+    if (hasConflict) {
       return res.status(409).json({
-        message: "A rehearsal with overlapping voice parts already exists on this date. Each voice part can only have one rehearsal per day.",
+        message:
+          "Un pupitre de cette répétition a déjà une répétition ce jour-là.",
       });
     }
 
-    // Sauvegarder les anciennes valeurs avant la mise à jour
     const existing = await Repetition.findById(req.params.id);
-    if (!existing) {
+    if (!existing)
       return res.status(404).json({ message: "Répétition introuvable." });
-    }
 
-    const oldStartTime = existing.startTime;
-    const oldEndTime = existing.endTime;
-    const oldLocation = existing.location;
+    const {
+      startTime: oldStart,
+      endTime: oldEnd,
+      location: oldLocation,
+      date: oldDate,
+    } = existing;
+
+    const dateChanged =
+      new Date(date).toDateString() !== new Date(oldDate).toDateString();
+    const timeChanged = startTime !== oldStart || endTime !== oldEnd;
+    const locationChanged =
+      req.body.location && req.body.location !== oldLocation;
+
+    // ✅ Reset des flags remindersSent si date OU heure change
+    const reminderReset =
+      dateChanged || timeChanged
+        ? {
+            "remindersSent.dayBefore": false,
+            "remindersSent.twoHours": false,
+            "remindersSent.tenMinutes": false,
+          }
+        : {};
 
     const updated = await Repetition.findByIdAndUpdate(
       req.params.id,
-      { ...req.body, pupitres: uniquePupitres },
-      { new: true, runValidators: true }
+      {
+        ...req.body,
+        pupitres: uniquePupitres,
+        ...reminderReset,
+      },
+      { new: true, runValidators: true },
     );
-
-    if (!updated) {
+    if (!updated)
       return res.status(404).json({ message: "Répétition introuvable." });
-    }
 
-    res.json({ 
-      message: "Répétition mise à jour avec succès.", 
-      updated: {
-        _id: updated._id,
-        pupitres: updated.pupitres
-      }
+    res.json({
+      message: "Répétition mise à jour avec succès.",
+      updated: { _id: updated._id, pupitres: updated.pupitres },
     });
 
-    // ✅ PUSH NOTIFICATION: notifier les choristes si l'heure ou le lieu a changé
-    const timeChanged = (req.body.startTime && req.body.startTime !== oldStartTime) ||
-                        (req.body.endTime && req.body.endTime !== oldEndTime);
-    const locationChanged = req.body.location && req.body.location !== oldLocation;
+    // ✅ Notification modification — envoyée seulement si quelque chose a changé
+    // tokens récupérés DANS le background pour ne pas bloquer la réponse
+    if (dateChanged || timeChanged || locationChanged) {
+      const changes = [];
+      if (dateChanged) changes.push(`Date : ${formatDateFr(updated.date)}`);
+      if (timeChanged)
+        changes.push(`Horaire : ${updated.startTime}–${updated.endTime}`);
+      if (locationChanged) changes.push(`Lieu : ${updated.location}`);
 
-    if (timeChanged || locationChanged) {
-      setImmediate(async () => {
-        try {
-          const choristes = await User.find({
-            role: 'choriste',
-            isLocked: false,
-            pupitre: { $in: uniquePupitres },
-            fcmToken: { $ne: null },
-          }).select('fcmToken');
-
-          const tokens = choristes.map(c => c.fcmToken).filter(Boolean);
-          if (tokens.length === 0) return;
-
-          const dateStr = new Date(updated.date).toLocaleDateString('fr-FR', {
-            weekday: 'long', day: 'numeric', month: 'long',
-          });
-
-          const changes = [];
-          if (timeChanged) changes.push(`Horaire: ${updated.startTime}–${updated.endTime}`);
-          if (locationChanged) changes.push(`Lieu: ${updated.location}`);
-          const pushBody = `${dateStr} — ${changes.join(' · ')}`;
-
-          await sendPushNotification({
-            tokens,
-            title: '⚠️ Répétition modifiée',
-            body: pushBody,
-            data: {
-              type: 'repetition_updated',
-              repetitionId: updated._id.toString(),
-            },
-          });
-        } catch (e) {
-          console.error('[FCM] Erreur notif modification répétition (admin):', e);
-        }
-      });
+      sendPushInBackground(uniquePupitres, (tokens) => ({
+        tokens,
+        title: "⚠️ Répétition modifiée",
+        body: `${formatDateFr(updated.date)} — ${changes.join(" · ")}`,
+        data: {
+          type: "repetition_updated",
+          repetitionId: updated._id.toString(),
+        },
+      }));
     }
-
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Erreur mise à jour." });
-  }
-};
-
-// ✅ UPDATED: Filter repetitions by user's pupitre
-export const getRepetitions = async (req, res) => {
-  try {
-    const userId = req.auth.userId;
-    
-    const user = await User.findById(userId).select('role pupitre isChefDePupitre');
-    if (!user) {
-      return res.status(404).json({ message: 'Utilisateur introuvable.' });
-    }
-
-    let repetitionQuery = {};
-
-    if (user.role === 'manager' || user.role === 'admin' || user.role === 'chef de choeur') {
-      repetitionQuery = {};
-    } else if (user.role === 'choriste') {
-      if (!user.pupitre) {
-        return res.status(400).json({ message: 'Pupitre non défini pour ce choriste.' });
-      }
-      repetitionQuery = {
-        pupitres: { $in: [user.pupitre] }
-      };
-    } else {
-      return res.status(403).json({ message: 'Accès non autorisé.' });
-    }
-
-    const repetitions = await Repetition.find(repetitionQuery)
-      .populate('concert', 'title')
-      .populate('presentChoristes', 'firstName lastName pupitre')
-      .populate('absentChoristes.choriste', 'firstName lastName pupitre')
-      .populate('manualPresences.choriste', 'firstName lastName pupitre')
-      .populate('manualPresences.addedBy', 'firstName lastName')
-      .populate({
-        path: 'managerModifications.manager',
-        select: 'firstName lastName',
-        options: { strictPopulate: false }
-      })
-      .sort({ date: 1 });
-
-    res.json(repetitions);
-  } catch (error) {
-    console.error('Error getting repetitions:', error);
-    res.status(500).json({ message: 'Erreur serveur lors de la récupération des répétitions.' });
+    console.error("[updateRepetition]", error);
+    res.status(500).json({ message: "Erreur lors de la mise à jour." });
   }
 };
 
 export const deleteRepetitionPermanent = async (req, res) => {
   try {
     const repetition = await Repetition.findById(req.params.id);
-    if (!repetition) {
+    if (!repetition)
       return res.status(404).json({ message: "Répétition introuvable." });
-    }
 
-    // Capture info before deletion for push notification
-    const { date, startTime, endTime, location, pupitres: repPupitres } = repetition;
+    const {
+      date,
+      startTime,
+      endTime,
+      location,
+      pupitres: repPupitres,
+    } = repetition;
 
     await Repetition.findByIdAndDelete(req.params.id);
+
     res.json({ message: "Répétition supprimée définitivement." });
 
-    // ✅ PUSH NOTIFICATION: notify concerned choristes of cancellation
-    setImmediate(async () => {
-      try {
-        const choristes = await User.find({
-          role: 'choriste',
-          isLocked: false,
-          pupitre: { $in: repPupitres },
-          fcmToken: { $ne: null },
-        }).select('fcmToken');
-
-        const tokens = choristes.map(c => c.fcmToken);
-        if (tokens.length === 0) return;
-
-        const dateStr = new Date(date).toLocaleDateString('fr-FR', {
-          weekday: 'long', day: 'numeric', month: 'long',
-        });
-
-        await sendPushNotification({
-          tokens,
-          title: '❌ Répétition annulée',
-          body: `La répétition du ${dateStr} (${startTime}–${endTime}) à ${location} a été annulée.`,
-          data: {
-            type: 'repetition_cancelled',
-          },
-        });
-      } catch (e) {
-        console.error('[FCM] Erreur notif annulation répétition:', e);
-      }
-    });
+    // ✅ Notification annulation — tokens récupérés DANS le background
+    sendPushInBackground(repPupitres, (tokens) => ({
+      tokens,
+      title: "❌ Répétition annulée",
+      body: `La répétition du ${formatDateFr(date)} (${startTime}–${endTime}) à ${location} a été annulée.`,
+      data: { type: "repetition_cancelled" },
+    }));
   } catch (error) {
-    res.status(500).json({ message: "Erreur suppression." });
+    console.error("[deleteRepetitionPermanent]", error);
+    res.status(500).json({ message: "Erreur lors de la suppression." });
   }
 };
 
-export const getAttendanceForConcert = async (req, res) => {
+// ─────────────────────────────────────────────────────────────
+// LECTURE RÉPÉTITIONS
+// ─────────────────────────────────────────────────────────────
+
+export const getRepetitions = async (req, res) => {
   try {
-    const { concertId } = req.params;
+    const user = await User.findById(req.auth.userId).select(
+      "role pupitre isChefDePupitre",
+    );
+    if (!user)
+      return res.status(404).json({ message: "Utilisateur introuvable." });
 
-    const config = await Config.findOne();
-    const threshold = config ? config.participationThreshold : 70;
-
-    const repetitions = await Repetition.find({ concert: concertId });
-    if (!repetitions.length) {
-      return res.status(404).json({ 
-        message: "Aucune répétition trouvée pour ce concert." 
-      });
+    let query = {};
+    if (user.role === "choriste") {
+      if (!user.pupitre)
+        return res
+          .status(400)
+          .json({ message: "Pupitre non défini pour ce choriste." });
+      query = { pupitres: { $in: [user.pupitre] } };
+    } else if (!["manager", "admin", "chef de choeur"].includes(user.role)) {
+      return res.status(403).json({ message: "Accès non autorisé." });
     }
 
-    const choristes = await User.find({
-      role: "choriste",
-      isChoristeLocked: { $ne: true },
-    });
+    const repetitions = await Repetition.find(query)
+      .populate("concert", "title")
+      .populate("presentChoristes", "firstName lastName pupitre")
+      .populate("absentChoristes.choriste", "firstName lastName pupitre")
+      .populate("manualPresences.choriste", "firstName lastName pupitre")
+      .populate("manualPresences.addedBy", "firstName lastName")
+      .populate({
+        path: "managerModifications.manager",
+        select: "firstName lastName",
+        options: { strictPopulate: false },
+      })
+      .sort({ date: 1 });
 
-    const participation = choristes.map((choriste) => {
-      let totalRepsForChoriste = 0;
-      let attendedReps = 0;
-
-      repetitions.forEach((rep) => {
-        if (rep.pupitres.includes(choriste.pupitre)) {
-          totalRepsForChoriste++;
-          
-          const isPresent = rep.presentChoristes.some(p => 
-            p.toString() === choriste._id.toString()
-          );
-          
-          const manualPresence = rep.manualPresences.find(m => 
-            m.choriste.toString() === choriste._id.toString() && m.type === 'present'
-          );
-          
-          if (isPresent || manualPresence) {
-            attendedReps++;
-          }
-        }
-      });
-
-      const attendanceRate = totalRepsForChoriste > 0 
-        ? Math.round((attendedReps / totalRepsForChoriste) * 100) 
-        : 100;
-
-      return {
-        choristeId: choriste._id,
-        firstName: choriste.firstName,
-        lastName: choriste.lastName,
-        email: choriste.email,
-        pupitre: choriste.pupitre,
-        totalRepetitions: totalRepsForChoriste,
-        attendedRepetitions: attendedReps,
-        attendanceRate,
-      };
-    });
-
-    const relevantParticipation = participation.filter(p => p.totalRepetitions > 0);
-
-    res.json({
-      threshold,
-      participation: relevantParticipation,
-      totalRepetitions: repetitions.length,
-      stats: {
-        totalChoristes: relevantParticipation.length,
-        avgAttendanceRate: relevantParticipation.length > 0 
-          ? Math.round(relevantParticipation.reduce((sum, p) => sum + p.attendanceRate, 0) / relevantParticipation.length)
-          : 0,
-        pupitreBreakdown: ['soprano', 'alto', 'ténor', 'basse'].map(pupitre => {
-          const pupitreParticipation = relevantParticipation.filter(p => p.pupitre === pupitre);
-          const pupitreRepetitions = repetitions.filter(rep => rep.pupitres.includes(pupitre));
-          return {
-            pupitre,
-            choristes: pupitreParticipation.length,
-            repetitions: pupitreRepetitions.length,
-            avgAttendance: pupitreParticipation.length > 0 
-              ? Math.round(pupitreParticipation.reduce((sum, p) => sum + p.attendanceRate, 0) / pupitreParticipation.length)
-              : 0
-          };
-        })
-      }
-    });
+    res.json(repetitions);
   } catch (error) {
-    console.error("Erreur calcul taux de participation:", error);
-    res.status(500).json({ message: "Erreur serveur." });
+    console.error("[getRepetitions]", error);
+    res
+      .status(500)
+      .json({ message: "Erreur lors de la récupération des répétitions." });
   }
 };
 
 export const getRepetitionsByConcert = async (req, res) => {
   try {
-    const { concertId } = req.params;
-    const repetitions = await Repetition.find({ concert: concertId });
-    res.status(200).json(repetitions);
+    const repetitions = await Repetition.find({
+      concert: req.params.concertId,
+    });
+    res.json(repetitions);
   } catch (error) {
-    console.error("Erreur récupération répétitions:", error);
-    res.status(500).json({ message: "Erreur serveur" });
+    console.error("[getRepetitionsByConcert]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
-// ✅ UPDATED: Presence can only be marked during the repetition window
+export const getRepetitionsForManager = async (req, res) => {
+  try {
+    const manager = await User.findById(req.auth.userId);
+    if (!manager || manager.role !== "manager") {
+      return res.status(403).json({ message: "Accès refusé." });
+    }
+
+    const repetitions = await Repetition.find()
+      .populate("concert", "title")
+      .populate({
+        path: "managerModifications.manager",
+        select: "firstName lastName",
+      })
+      .sort({ date: 1 });
+
+    const managerId = manager._id.toString();
+
+    const result = repetitions.map((rep) => {
+      const repObj = rep.toObject();
+      const myMod = rep.managerModifications?.find((mod) => {
+        const id = mod.manager._id
+          ? mod.manager._id.toString()
+          : mod.manager.toString();
+        return id === managerId;
+      });
+      repObj.hasMyModification = !!myMod;
+      repObj.myModification = myMod || null;
+      return repObj;
+    });
+
+    res.json({
+      repetitions: result,
+      managerInfo: { name: `${manager.firstName} ${manager.lastName}` },
+    });
+  } catch (error) {
+    console.error("[getRepetitionsForManager]", error);
+    res.status(500).json({ message: "Erreur serveur." });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PRÉSENCES / ABSENCES (CHORISTE)
+// ─────────────────────────────────────────────────────────────
+
 export const markRepetitionPresence = async (req, res) => {
   const choristeId = req.auth.userId;
-  const repetitionId = req.params.id;
 
   try {
-    if (!choristeId) {
+    if (!choristeId)
       return res.status(400).json({ message: "ID choriste manquant." });
-    }
 
-    const repetition = await Repetition.findById(repetitionId);
-    if (!repetition) {
+    const repetition = await Repetition.findById(req.params.id);
+    if (!repetition)
       return res.status(404).json({ message: "Répétition introuvable." });
-    }
 
-    // ✅ NEW: Enforce time window
     const windowCheck = isInsideRepetitionWindow(repetition);
     if (!windowCheck.allowed) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: windowCheck.reason,
-        code: 'OUTSIDE_REPETITION_WINDOW'
+        code: "OUTSIDE_REPETITION_WINDOW",
       });
     }
 
     repetition.absentChoristes = repetition.absentChoristes.filter(
-      (a) => a.choriste.toString() !== choristeId
+      (a) => a.choriste.toString() !== choristeId,
     );
-
     if (!repetition.presentChoristes.includes(choristeId)) {
       repetition.presentChoristes.push(choristeId);
     }
 
     await repetition.save();
-
     res.json({ message: "Présence enregistrée avec succès." });
   } catch (err) {
-    console.error("markRepetitionPresence error:", err);
+    console.error("[markRepetitionPresence]", err);
     res.status(500).json({ message: "Erreur lors de l'enregistrement." });
   }
 };
 
-// ✅ UPDATED: Absence can only be declared during the repetition window
 export const markRepetitionAbsence = async (req, res) => {
   const choristeId = req.auth.userId;
-  const repetitionId = req.params.id;
   const { reason } = req.body;
 
   try {
-    const repetition = await Repetition.findById(repetitionId);
-    if (!repetition) {
+    const repetition = await Repetition.findById(req.params.id);
+    if (!repetition)
       return res.status(404).json({ message: "Répétition introuvable." });
+
+    if (!reason || reason.trim() === "") {
+      return res
+        .status(400)
+        .json({ message: "Le motif d'absence est requis." });
     }
 
-    if (!reason || reason.trim() === '') {
-      return res.status(400).json({ message: "Le motif d'absence est requis." });
-    }
-
-    // ✅ NEW: Enforce time window
     const windowCheck = isInsideRepetitionWindow(repetition);
     if (!windowCheck.allowed) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         message: windowCheck.reason,
-        code: 'OUTSIDE_REPETITION_WINDOW'
+        code: "OUTSIDE_REPETITION_WINDOW",
       });
     }
 
     repetition.presentChoristes = repetition.presentChoristes.filter(
-      (p) => p.toString() !== choristeId
+      (p) => p.toString() !== choristeId,
     );
-
     const alreadyAbsent = repetition.absentChoristes.some(
-      (a) => a.choriste.toString() === choristeId
+      (a) => a.choriste.toString() === choristeId,
     );
-
     if (!alreadyAbsent) {
       repetition.absentChoristes.push({
         choriste: choristeId,
-        reason: reason,
-        markedAt: new Date()
+        reason,
+        markedAt: new Date(),
       });
     }
 
     await repetition.save();
-
     res.json({ message: "Absence enregistrée avec succès." });
   } catch (err) {
-    console.error("markRepetitionAbsence error:", err);
+    console.error("[markRepetitionAbsence]", err);
     res.status(500).json({ message: "Erreur lors de l'enregistrement." });
   }
 };
 
+// ─────────────────────────────────────────────────────────────
+// PRÉSENCES MANUELLES (CHEF DE PUPITRE)
+// ─────────────────────────────────────────────────────────────
+
 export const getMyChoristesStatus = async (req, res) => {
   try {
-    const chefId = req.auth.userId;
-    const { id: repetitionId } = req.params;
-
-    const chef = await User.findById(chefId);
-    if (!chef || chef.role !== 'choriste' || !chef.isChefDePupitre) {
-      return res.status(403).json({ 
-        message: 'Accès refusé. Seuls les chefs de pupitre peuvent accéder à cette fonctionnalité.' 
+    const chef = await User.findById(req.auth.userId);
+    if (!chef || chef.role !== "choriste" || !chef.isChefDePupitre) {
+      return res.status(403).json({
+        message:
+          "Accès refusé. Seuls les chefs de pupitre peuvent accéder à cette fonctionnalité.",
       });
     }
 
-    const repetition = await Repetition.findById(repetitionId)
-      .populate('presentChoristes', 'firstName lastName')
-      .populate('absentChoristes.choriste', 'firstName lastName')
-      .populate('manualPresences.choriste', 'firstName lastName')
-      .populate('manualPresences.addedBy', 'firstName lastName');
+    const repetition = await Repetition.findById(req.params.id)
+      .populate("presentChoristes", "firstName lastName")
+      .populate("absentChoristes.choriste", "firstName lastName")
+      .populate("manualPresences.choriste", "firstName lastName")
+      .populate("manualPresences.addedBy", "firstName lastName");
 
-    if (!repetition) {
-      return res.status(404).json({ message: 'Répétition introuvable.' });
-    }
+    if (!repetition)
+      return res.status(404).json({ message: "Répétition introuvable." });
 
     if (!repetition.pupitres.includes(chef.pupitre)) {
-      return res.status(403).json({ 
-        message: `Cette répétition ne concerne pas votre pupitre (${chef.pupitre}). Pupitres concernés: ${repetition.pupitres.join(', ')}` 
+      return res.status(403).json({
+        message: `Cette répétition ne concerne pas votre pupitre (${chef.pupitre}).`,
       });
     }
 
-    const myPupitreChoristesList = await User.find({
-      role: 'choriste',
+    const myChoristesList = await User.find({
+      role: "choriste",
       pupitre: chef.pupitre,
-      isLocked: { $ne: true }
-    }).select('firstName lastName email');
+      isLocked: { $ne: true },
+    }).select("firstName lastName email");
 
-    const choristesWithStatus = myPupitreChoristesList.map(choriste => {
-      const choristeId = choriste._id.toString();
+    const choristesWithStatus = myChoristesList.map((choriste) => {
+      const id = choriste._id.toString();
 
-      const isInPresentList = repetition.presentChoristes.some(
-        present => present._id.toString() === choristeId
+      const isPresent = repetition.presentChoristes.some(
+        (p) => p._id.toString() === id,
+      );
+      const absentRec = repetition.absentChoristes.find(
+        (a) => a.choriste._id.toString() === id,
+      );
+      const manualRec = repetition.manualPresences.find(
+        (m) => m.choriste._id.toString() === id,
       );
 
-      const absentRecord = repetition.absentChoristes.find(
-        absent => absent.choriste._id.toString() === choristeId
-      );
-
-      const manualRecord = repetition.manualPresences.find(
-        manual => manual.choriste._id.toString() === choristeId
-      );
-
-      let status = 'no-response';
+      let status = "no-response";
       let isManual = false;
       let manualReason = null;
       let addedBy = null;
       let addedAt = null;
       let automaticReason = null;
 
-      if (manualRecord) {
-        status = manualRecord.type;
+      if (manualRec) {
+        status = manualRec.type;
         isManual = true;
-        manualReason = manualRecord.reason;
-        addedBy = `${manualRecord.addedBy.firstName} ${manualRecord.addedBy.lastName}`;
-        addedAt = manualRecord.addedAt;
-      } else if (isInPresentList) {
-        status = 'present';
-        automaticReason = 'Marqué présent automatiquement';
-      } else if (absentRecord) {
-        status = 'absent';
-        automaticReason = absentRecord.reason;
+        manualReason = manualRec.reason;
+        addedBy = `${manualRec.addedBy.firstName} ${manualRec.addedBy.lastName}`;
+        addedAt = manualRec.addedAt;
+      } else if (isPresent) {
+        status = "present";
+        automaticReason = "Marqué présent automatiquement";
+      } else if (absentRec) {
+        status = "absent";
+        automaticReason = absentRec.reason;
       }
 
       return {
@@ -656,7 +723,7 @@ export const getMyChoristesStatus = async (req, res) => {
         manualReason,
         addedBy,
         addedAt,
-        automaticReason
+        automaticReason,
       };
     });
 
@@ -667,397 +734,166 @@ export const getMyChoristesStatus = async (req, res) => {
         startTime: repetition.startTime,
         endTime: repetition.endTime,
         location: repetition.location,
-        pupitres: repetition.pupitres
+        pupitres: repetition.pupitres,
       },
       chefPupitre: chef.pupitre,
-      choristes: choristesWithStatus
+      choristes: choristesWithStatus,
     });
-
   } catch (error) {
-    console.error('❌ Error getting choristes status:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
+    console.error("[getMyChoristesStatus]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
 export const addManualPresence = async (req, res) => {
   try {
     const chefId = req.auth.userId;
-    const { id: repetitionId } = req.params;
     const { choristeId, type, reason } = req.body;
 
-    if (!choristeId || !type || !reason || reason.trim() === '') {
-      return res.status(400).json({ 
-        message: 'Choriste, type de présence et motif sont requis.' 
-      });
+    if (!choristeId || !type || !reason?.trim()) {
+      return res
+        .status(400)
+        .json({ message: "Choriste, type de présence et motif sont requis." });
     }
-
-    if (!['present', 'absent'].includes(type)) {
-      return res.status(400).json({ 
-        message: 'Type de présence invalide. Doit être "present" ou "absent".' 
-      });
+    if (!["present", "absent"].includes(type)) {
+      return res
+        .status(400)
+        .json({ message: 'Type invalide. Doit être "present" ou "absent".' });
     }
 
     const chef = await User.findById(chefId);
-    if (!chef || chef.role !== 'choriste' || !chef.isChefDePupitre) {
-      return res.status(403).json({ 
-        message: 'Accès refusé. Seuls les chefs de pupitre peuvent modifier les présences.' 
-      });
+    if (!chef || chef.role !== "choriste" || !chef.isChefDePupitre) {
+      return res.status(403).json({ message: "Accès refusé." });
     }
 
     const choriste = await User.findById(choristeId);
-    if (!choriste || choriste.role !== 'choriste' || choriste.pupitre !== chef.pupitre) {
-      return res.status(403).json({ 
-        message: 'Vous ne pouvez gérer que les choristes de votre pupitre.' 
+    if (
+      !choriste ||
+      choriste.role !== "choriste" ||
+      choriste.pupitre !== chef.pupitre
+    ) {
+      return res.status(403).json({
+        message: "Vous ne pouvez gérer que les choristes de votre pupitre.",
       });
     }
 
-    const repetition = await Repetition.findById(repetitionId);
-    if (!repetition) {
-      return res.status(404).json({ message: 'Répétition introuvable.' });
-    }
+    const repetition = await Repetition.findById(req.params.id);
+    if (!repetition)
+      return res.status(404).json({ message: "Répétition introuvable." });
 
-    repetition.presentChoristes = repetition.presentChoristes.filter(id => 
-      !id.equals(choristeId)
+    repetition.presentChoristes = repetition.presentChoristes.filter(
+      (id) => !id.equals(choristeId),
     );
-    repetition.absentChoristes = repetition.absentChoristes.filter(a => 
-      !a.choriste.equals(choristeId)
+    repetition.absentChoristes = repetition.absentChoristes.filter(
+      (a) => !a.choriste.equals(choristeId),
     );
-
-    repetition.manualPresences = repetition.manualPresences.filter(m => 
-      !m.choriste.equals(choristeId)
+    repetition.manualPresences = repetition.manualPresences.filter(
+      (m) => !m.choriste.equals(choristeId),
     );
 
     repetition.manualPresences.push({
       choriste: choristeId,
       addedBy: chefId,
       reason: reason.trim(),
-      type
+      type,
     });
 
     await repetition.save();
-
-    res.json({ 
+    res.json({
       message: `Présence manuelle "${type}" ajoutée pour ${choriste.firstName} ${choriste.lastName}.`,
       action: type,
-      choriste: {
-        firstName: choriste.firstName,
-        lastName: choriste.lastName
-      }
+      choriste: { firstName: choriste.firstName, lastName: choriste.lastName },
     });
-
   } catch (error) {
-    console.error('Error adding manual presence:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
+    console.error("[addManualPresence]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
 export const removeManualPresence = async (req, res) => {
   try {
-    const chefId = req.auth.userId;
-    const { id: repetitionId, choristeId } = req.params;
-
-    const chef = await User.findById(chefId);
-    if (!chef || chef.role !== 'choriste' || !chef.isChefDePupitre) {
-      return res.status(403).json({ message: 'Accès refusé.' });
+    const chef = await User.findById(req.auth.userId);
+    if (!chef || chef.role !== "choriste" || !chef.isChefDePupitre) {
+      return res.status(403).json({ message: "Accès refusé." });
     }
 
-    const choriste = await User.findById(choristeId);
+    const choriste = await User.findById(req.params.choristeId);
     if (!choriste || choriste.pupitre !== chef.pupitre) {
-      return res.status(403).json({ 
-        message: 'Choriste introuvable dans votre pupitre.' 
-      });
+      return res
+        .status(403)
+        .json({ message: "Choriste introuvable dans votre pupitre." });
     }
 
-    const repetition = await Repetition.findById(repetitionId);
-    if (!repetition) {
-      return res.status(404).json({ message: 'Répétition introuvable.' });
-    }
+    const repetition = await Repetition.findById(req.params.id);
+    if (!repetition)
+      return res.status(404).json({ message: "Répétition introuvable." });
 
-    repetition.manualPresences = repetition.manualPresences.filter(m => 
-      !m.choriste.equals(choristeId)
+    repetition.manualPresences = repetition.manualPresences.filter(
+      (m) => !m.choriste.equals(req.params.choristeId),
     );
-
     await repetition.save();
 
-    res.json({ 
-      message: `Présence manuelle supprimée pour ${choriste.firstName} ${choriste.lastName}. Retour au statut automatique.`
-    });
-
-  } catch (error) {
-    console.error('Error removing manual presence:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
-  }
-};
-
-export const getManagerAbsenceReport = async (req, res) => {
-  try {
-    const {
-      filterType, pupitre, choristeId, date, dateFrom, dateTo, concertId
-    } = req.query;
-
-    const validFilterTypes = [
-      'general', 'pupitre', 'choriste', 'date', 
-      'dateFrom', 'season', 'dateRange', 'programme'
-    ];
-
-    if (!filterType || !validFilterTypes.includes(filterType)) {
-      return res.status(400).json({ 
-        message: 'Type de filtre invalide. Options: ' + validFilterTypes.join(', ')
-      });
-    }
-
-    let repetitionQuery = {};
-    let dateFilter = {};
-
-    switch (filterType) {
-      case 'date':
-        if (!date) return res.status(400).json({ message: 'Date requise pour ce filtre.' });
-        dateFilter = {
-          date: {
-            $gte: new Date(date),
-            $lt: new Date(new Date(date).getTime() + 24 * 60 * 60 * 1000)
-          }
-        };
-        break;
-      case 'dateFrom':
-        if (!dateFrom) return res.status(400).json({ message: 'Date de début requise pour ce filtre.' });
-        dateFilter = { date: { $gte: new Date(dateFrom) } };
-        break;
-      case 'season':
-        const now = new Date();
-        const currentYear = now.getFullYear();
-        const seasonStart = now.getMonth() >= 8 
-          ? new Date(currentYear, 8, 1) 
-          : new Date(currentYear - 1, 8, 1);
-        dateFilter = { date: { $gte: seasonStart } };
-        break;
-      case 'dateRange':
-        if (!dateFrom || !dateTo) return res.status(400).json({ message: 'Dates de début et fin requises pour ce filtre.' });
-        dateFilter = { date: { $gte: new Date(dateFrom), $lte: new Date(dateTo) } };
-        break;
-      case 'programme':
-        if (!concertId) return res.status(400).json({ message: 'ID du concert/programme requis pour ce filtre.' });
-        repetitionQuery.concert = concertId;
-        break;
-    }
-
-    const finalQuery = { ...repetitionQuery, ...dateFilter };
-
-    const repetitions = await Repetition.find(finalQuery)
-      .populate('concert', 'title')
-      .populate('absentChoristes.choriste', 'firstName lastName email pupitre')
-      .populate('manualPresences.choriste', 'firstName lastName email pupitre')
-      .populate('manualPresences.addedBy', 'firstName lastName')
-      .sort({ date: -1 });
-
-    if (!repetitions.length) {
-      return res.json({
-        filterType,
-        filterValue: getFilterValue(req.query),
-        period: getPeriodInfo(filterType, req.query),
-        statistics: { totalRepetitions: 0, totalAbsences: 0, absenceRate: 0 },
-        absenceRecords: []
-      });
-    }
-
-    let allAbsenceRecords = [];
-
-    repetitions.forEach(repetition => {
-      repetition.absentChoristes.forEach(absent => {
-        if (absent.choriste && repetition.pupitres.includes(absent.choriste.pupitre)) {
-          allAbsenceRecords.push({
-            _id: `${repetition._id}_${absent.choriste._id}_auto`,
-            choriste: {
-              _id: absent.choriste._id,
-              firstName: absent.choriste.firstName,
-              lastName: absent.choriste.lastName,
-              email: absent.choriste.email,
-              pupitre: absent.choriste.pupitre
-            },
-            repetition: {
-              _id: repetition._id,
-              date: repetition.date,
-              startTime: repetition.startTime,
-              endTime: repetition.endTime,
-              location: repetition.location,
-              pupitres: repetition.pupitres,
-              concert: repetition.concert
-            },
-            reason: absent.reason,
-            isManual: false,
-            addedAt: repetition.createdAt
-          });
-        }
-      });
-
-      repetition.manualPresences
-        .filter(manual => manual.type === 'absent')
-        .forEach(manual => {
-          if (manual.choriste && repetition.pupitres.includes(manual.choriste.pupitre)) {
-            allAbsenceRecords.push({
-              _id: `${repetition._id}_${manual.choriste._id}_manual`,
-              choriste: {
-                _id: manual.choriste._id,
-                firstName: manual.choriste.firstName,
-                lastName: manual.choriste.lastName,
-                email: manual.choriste.email,
-                pupitre: manual.choriste.pupitre
-              },
-              repetition: {
-                _id: repetition._id,
-                date: repetition.date,
-                startTime: repetition.startTime,
-                endTime: repetition.endTime,
-                location: repetition.location,
-                pupitres: repetition.pupitres,
-                concert: repetition.concert
-              },
-              reason: manual.reason,
-              isManual: true,
-              addedBy: `${manual.addedBy.firstName} ${manual.addedBy.lastName}`,
-              addedAt: manual.addedAt
-            });
-          }
-        });
-    });
-
-    // Apply pupitre / choriste filter
-    let filteredRecords = allAbsenceRecords;
-    if (filterType === 'pupitre' && pupitre) {
-      filteredRecords = allAbsenceRecords.filter(r => r.choriste.pupitre === pupitre);
-    } else if (filterType === 'choriste' && choristeId) {
-      filteredRecords = allAbsenceRecords.filter(r => r.choriste._id.toString() === choristeId);
-    }
-
-    const totalRepetitions = repetitions.length;
-    const totalAbsences = filteredRecords.length;
-    const uniqueChoristes = new Set(filteredRecords.map(r => r.choriste._id.toString())).size;
-    const absenceRate = totalRepetitions > 0 
-      ? ((totalAbsences / (totalRepetitions * uniqueChoristes || 1)) * 100).toFixed(1)
-      : '0.0';
-
-    let mostAbsentChoriste = null;
-    if (filteredRecords.length > 0) {
-      const absenceCountByChpriste = {};
-      filteredRecords.forEach(record => {
-        const id = record.choriste._id.toString();
-        absenceCountByChpriste[id] = (absenceCountByChpriste[id] || 0) + 1;
-      });
-      const maxAbsences = Math.max(...Object.values(absenceCountByChpriste));
-      const mostAbsentId = Object.keys(absenceCountByChpriste).find(
-        key => absenceCountByChpriste[key] === maxAbsences
-      );
-      const mostAbsentRecord = filteredRecords.find(
-        r => r.choriste._id.toString() === mostAbsentId
-      );
-      if (mostAbsentRecord) {
-        mostAbsentChoriste = {
-          name: `${mostAbsentRecord.choriste.firstName} ${mostAbsentRecord.choriste.lastName}`,
-          absences: maxAbsences,
-          pupitre: mostAbsentRecord.choriste.pupitre
-        };
-      }
-    }
-
-    filteredRecords.sort((a, b) => new Date(b.repetition.date) - new Date(a.repetition.date));
-
     res.json({
-      filterType,
-      filterValue: getFilterValue(req.query),
-      period: getPeriodInfo(filterType, req.query),
-      statistics: {
-        totalRepetitions,
-        totalAbsences,
-        absenceRate: parseFloat(absenceRate),
-        mostAbsentChoriste
-      },
-      absenceRecords: filteredRecords
+      message: `Présence manuelle supprimée pour ${choriste.firstName} ${choriste.lastName}.`,
     });
-
   } catch (error) {
-    console.error('Error generating absence report:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
+    console.error("[removeManualPresence]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
-const getFilterValue = (query) => {
-  const { filterType, pupitre, choristeId, date, dateFrom, dateTo, concertId } = query;
-  switch (filterType) {
-    case 'general': return 'Tous les choristes';
-    case 'pupitre': return pupitre || 'Pupitre non spécifié';
-    case 'choriste': return choristeId || 'Choriste non spécifié';
-    case 'date': return date || 'Date non spécifiée';
-    case 'dateFrom': return `Depuis ${dateFrom || 'date non spécifiée'}`;
-    case 'season': return 'Depuis début de saison';
-    case 'dateRange': return `Du ${dateFrom || '?'} au ${dateTo || '?'}`;
-    case 'programme': return concertId || 'Programme non spécifié';
-    default: return 'Filtre inconnu';
-  }
-};
-
-const getPeriodInfo = (filterType, query) => {
-  const { date, dateFrom, dateTo } = query;
-  switch (filterType) {
-    case 'date': return { start: date, end: date, type: 'single-date' };
-    case 'dateFrom': return { start: dateFrom, end: new Date().toISOString().split('T')[0], type: 'from-date' };
-    case 'season':
-      const now = new Date();
-      const currentYear = now.getFullYear();
-      const seasonStart = now.getMonth() >= 8 ? `${currentYear}-09-01` : `${currentYear - 1}-09-01`;
-      return { start: seasonStart, end: new Date().toISOString().split('T')[0], type: 'season' };
-    case 'dateRange': return { start: dateFrom, end: dateTo, type: 'range' };
-    default: return { start: null, end: null, type: 'all-time' };
-  }
-};
+// ─────────────────────────────────────────────────────────────
+// MODIFICATION MANAGER
+// ─────────────────────────────────────────────────────────────
 
 export const modifyRepetitionForAllChoristes = async (req, res) => {
   try {
     const managerId = req.auth.userId;
-    const { id: repetitionId } = req.params;
-    const { newStartTime, newEndTime, newLocation, urgentMessage, reason } = req.body;
+    const { newStartTime, newEndTime, newLocation, urgentMessage, reason } =
+      req.body;
 
     const manager = await User.findById(managerId);
-    if (!manager || manager.role !== 'manager') {
-      return res.status(403).json({ 
-        message: 'Accès refusé. Seuls les managers peuvent modifier les répétitions.' 
+    if (!manager || manager.role !== "manager") {
+      return res.status(403).json({
+        message:
+          "Accès refusé. Seuls les managers peuvent modifier les répétitions.",
       });
     }
 
-    const repetition = await Repetition.findById(repetitionId).populate('concert');
-    if (!repetition) {
-      return res.status(404).json({ message: 'Répétition introuvable.' });
-    }
+    const repetition = await Repetition.findById(req.params.id).populate(
+      "concert",
+    );
+    if (!repetition)
+      return res.status(404).json({ message: "Répétition introuvable." });
 
     const now = new Date();
-    const currentHour = now.getHours();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const repetitionDate = new Date(repetition.date);
-    repetitionDate.setHours(0, 0, 0, 0);
-
-    if (repetitionDate < today) {
-      return res.status(400).json({ 
-        message: 'Impossible de modifier une répétition passée. Cette répétition a déjà eu lieu.' 
-      });
-    }
-
-    if (repetitionDate.getTime() === today.getTime() && currentHour >= 18) {
-      return res.status(400).json({ 
-        message: 'Impossible de modifier une répétition d\'aujourd\'hui après 18h00. La période de modification est fermée.' 
-      });
-    }
-
-    if (!newStartTime && !newEndTime && !newLocation && !urgentMessage) {
-      return res.status(400).json({ 
-        message: 'Au moins une modification est requise.' 
-      });
-    }
-
-    repetition.managerModifications = repetition.managerModifications || [];
-    repetition.managerModifications = repetition.managerModifications.filter(mod => 
-      mod.manager.toString() !== managerId.toString()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const repDay = new Date(
+      new Date(repetition.date).getFullYear(),
+      new Date(repetition.date).getMonth(),
+      new Date(repetition.date).getDate(),
     );
+
+    if (repDay < today) {
+      return res
+        .status(400)
+        .json({ message: "Impossible de modifier une répétition passée." });
+    }
+    if (repDay.getTime() === today.getTime() && now.getHours() >= 18) {
+      return res.status(400).json({
+        message:
+          "Impossible de modifier une répétition d'aujourd'hui après 18h00.",
+      });
+    }
+    if (!newStartTime && !newEndTime && !newLocation && !urgentMessage) {
+      return res
+        .status(400)
+        .json({ message: "Au moins une modification est requise." });
+    }
+
+    repetition.managerModifications = (
+      repetition.managerModifications || []
+    ).filter((mod) => mod.manager.toString() !== managerId.toString());
 
     const modificationData = {
       manager: managerId,
@@ -1066,66 +902,62 @@ export const modifyRepetitionForAllChoristes = async (req, res) => {
         newEndTime: newEndTime || null,
         newLocation: newLocation || null,
         urgentMessage: urgentMessage || null,
-        reason: reason || null
+        reason: reason || null,
       },
       originalValues: {
         startTime: repetition.startTime,
         endTime: repetition.endTime,
-        location: repetition.location
+        location: repetition.location,
       },
       notificationsSent: false,
-      modifiedAt: new Date()
+      modifiedAt: new Date(),
     };
 
     repetition.managerModifications.push(modificationData);
     await repetition.save();
 
-    const savedModification = repetition.managerModifications[repetition.managerModifications.length - 1];
+    const savedMod =
+      repetition.managerModifications[
+        repetition.managerModifications.length - 1
+      ];
 
-    res.json({ 
-      message: 'Modification enregistrée.',
-      modificationId: savedModification._id,
-      totalChoristes: 0
+    res.json({
+      message: "Modification enregistrée.",
+      modificationId: savedMod._id,
+      totalChoristes: 0,
     });
 
-    // ✅ BACKGROUND: emails + push notification for update
     setImmediate(async () => {
       try {
-        const relevantChoristesList = await User.find({
-          role: 'choriste',
+        const choristes = await User.find({
+          role: "choriste",
           isLocked: { $ne: true },
-          pupitre: { $in: repetition.pupitres }
-        }).select('firstName lastName email pupitre fcmToken');
+          pupitre: { $in: repetition.pupitres },
+        }).select("firstName lastName email pupitre fcmToken");
 
-        const dateStr = new Date(repetition.date).toLocaleDateString('fr-FR', {
-          weekday: 'long', day: 'numeric', month: 'long',
-        });
-
-        // Build readable change summary for push notif
+        const dateStr = formatDateFr(repetition.date);
         const changes = [];
-        if (newStartTime || newEndTime) changes.push(`Horaire: ${newStartTime || repetition.startTime}–${newEndTime || repetition.endTime}`);
-        if (newLocation) changes.push(`Lieu: ${newLocation}`);
+        if (newStartTime || newEndTime)
+          changes.push(
+            `Horaire : ${newStartTime || repetition.startTime}–${newEndTime || repetition.endTime}`,
+          );
+        if (newLocation) changes.push(`Lieu : ${newLocation}`);
         if (urgentMessage) changes.push(urgentMessage);
-        const pushBody = changes.length > 0 
-          ? `${dateStr} — ${changes.join(' · ')}`
-          : `Modification pour la répétition du ${dateStr}`;
 
-        // Push notifications (batch)
-        const fcmTokens = relevantChoristesList.map(c => c.fcmToken).filter(Boolean);
-        if (fcmTokens.length > 0) {
+        const tokens = choristes.map((c) => c.fcmToken).filter(Boolean);
+        if (tokens.length > 0) {
           await sendPushNotification({
-            tokens: fcmTokens,
-            title: '⚠️ Répétition modifiée',
-            body: pushBody,
+            tokens,
+            title: "⚠️ Répétition modifiée",
+            body: `${dateStr} — ${changes.join(" · ")}`,
             data: {
-              type: 'repetition_updated',
-              repetitionId: repetitionId.toString(),
+              type: "repetition_updated",
+              repetitionId: repetition._id.toString(),
             },
           });
         }
 
-        // Emails
-        for (const choriste of relevantChoristesList) {
+        for (const choriste of choristes) {
           const emailData = createManagerModificationTemplate({
             choristeFirstName: choriste.firstName,
             choristeLastName: choriste.lastName,
@@ -1133,9 +965,8 @@ export const modifyRepetitionForAllChoristes = async (req, res) => {
             managerName: `${manager.firstName} ${manager.lastName}`,
             repetition,
             modifications: modificationData.modifications,
-            originalValues: modificationData.originalValues
+            originalValues: modificationData.originalValues,
           });
-
           await sendNotification({
             email: choriste.email,
             subject: emailData.subject,
@@ -1144,142 +975,329 @@ export const modifyRepetitionForAllChoristes = async (req, res) => {
           });
         }
 
-        const updatedRepetition = await Repetition.findById(repetitionId);
-        const modificationToUpdate = updatedRepetition.managerModifications.id(savedModification._id);
-        if (modificationToUpdate) {
-          modificationToUpdate.notificationsSent = true;
-          await updatedRepetition.save();
+        const freshRep = await Repetition.findById(repetition._id);
+        const modToUpdate = freshRep.managerModifications.id(savedMod._id);
+        if (modToUpdate) {
+          modToUpdate.notificationsSent = true;
+          await freshRep.save();
         }
-
-      } catch (emailError) {
-        console.error('Error sending modification notifications:', emailError);
+      } catch (e) {
+        console.error(
+          "[modifyRepetitionForAllChoristes] Erreur notifications:",
+          e,
+        );
       }
     });
-
   } catch (error) {
-    console.error('Error saving manager modification:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
+    console.error("[modifyRepetitionForAllChoristes]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
-export const getRepetitionsForManager = async (req, res) => {
-  try {
-    const managerId = req.auth.userId;
+// ─────────────────────────────────────────────────────────────
+// RAPPORTS D'ABSENCES
+// ─────────────────────────────────────────────────────────────
 
-    const manager = await User.findById(managerId);
-    if (!manager || manager.role !== 'manager') {
-      return res.status(403).json({ 
-        message: 'Accès refusé. Seuls les managers peuvent accéder à cette fonctionnalité.' 
+export const getManagerAbsenceReport = async (req, res) => {
+  try {
+    const { filterType, pupitre, choristeId } = req.query;
+
+    if (!filterType || !VALID_FILTER_TYPES.includes(filterType)) {
+      return res.status(400).json({
+        message:
+          "Type de filtre invalide. Options : " + VALID_FILTER_TYPES.join(", "),
       });
     }
 
-    const repetitions = await Repetition.find()
-      .populate('concert', 'title')
-      .populate({
-        path: 'managerModifications.manager',
-        select: 'firstName lastName'
-      })
-      .sort({ date: 1 });
+    const { repetitionQuery, dateFilter } = buildDateFilters(
+      filterType,
+      req.query,
+    );
+    const finalQuery = { ...repetitionQuery, ...dateFilter };
 
-    const repetitionsWithModificationStatus = repetitions.map(rep => {
-      const repObj = rep.toObject();
-      const managerModification = rep.managerModifications?.find(mod => {
-        const modManagerId = mod.manager._id ? mod.manager._id.toString() : mod.manager.toString();
-        return modManagerId === managerId.toString();
+    const repetitions = await Repetition.find(finalQuery)
+      .populate("concert", "title")
+      .populate("absentChoristes.choriste", "firstName lastName email pupitre")
+      .populate("manualPresences.choriste", "firstName lastName email pupitre")
+      .populate("manualPresences.addedBy", "firstName lastName")
+      .sort({ date: -1 });
+
+    if (!repetitions.length) {
+      return res.json({
+        filterType,
+        filterValue: getFilterValue(req.query),
+        period: getPeriodInfo(filterType, req.query),
+        statistics: { totalRepetitions: 0, totalAbsences: 0, absenceRate: 0 },
+        absenceRecords: [],
       });
+    }
 
-      repObj.hasMyModification = !!managerModification;
-      repObj.myModification = managerModification || null;
+    let allRecords = [];
 
-      return repObj;
-    });
+    for (const rep of repetitions) {
+      for (const absent of rep.absentChoristes) {
+        if (absent.choriste && rep.pupitres.includes(absent.choriste.pupitre)) {
+          allRecords.push({
+            _id: `${rep._id}_${absent.choriste._id}_auto`,
+            choriste: {
+              _id: absent.choriste._id,
+              firstName: absent.choriste.firstName,
+              lastName: absent.choriste.lastName,
+              email: absent.choriste.email,
+              pupitre: absent.choriste.pupitre,
+            },
+            repetition: {
+              _id: rep._id,
+              date: rep.date,
+              startTime: rep.startTime,
+              endTime: rep.endTime,
+              location: rep.location,
+              pupitres: rep.pupitres,
+              concert: rep.concert,
+            },
+            reason: absent.reason,
+            isManual: false,
+            addedAt: rep.createdAt,
+          });
+        }
+      }
+
+      for (const manual of rep.manualPresences.filter(
+        (m) => m.type === "absent",
+      )) {
+        if (manual.choriste && rep.pupitres.includes(manual.choriste.pupitre)) {
+          allRecords.push({
+            _id: `${rep._id}_${manual.choriste._id}_manual`,
+            choriste: {
+              _id: manual.choriste._id,
+              firstName: manual.choriste.firstName,
+              lastName: manual.choriste.lastName,
+              email: manual.choriste.email,
+              pupitre: manual.choriste.pupitre,
+            },
+            repetition: {
+              _id: rep._id,
+              date: rep.date,
+              startTime: rep.startTime,
+              endTime: rep.endTime,
+              location: rep.location,
+              pupitres: rep.pupitres,
+              concert: rep.concert,
+            },
+            reason: manual.reason,
+            isManual: true,
+            addedBy: `${manual.addedBy.firstName} ${manual.addedBy.lastName}`,
+            addedAt: manual.addedAt,
+          });
+        }
+      }
+    }
+
+    let filtered = allRecords;
+    if (filterType === "pupitre" && pupitre) {
+      filtered = allRecords.filter((r) => r.choriste.pupitre === pupitre);
+    } else if (filterType === "choriste" && choristeId) {
+      filtered = allRecords.filter(
+        (r) => r.choriste._id.toString() === choristeId,
+      );
+    }
+
+    const totalAbsences = filtered.length;
+    const uniqueChoristes = new Set(
+      filtered.map((r) => r.choriste._id.toString()),
+    ).size;
+    const absenceRate =
+      repetitions.length > 0
+        ? (
+            (totalAbsences / (repetitions.length * (uniqueChoristes || 1))) *
+            100
+          ).toFixed(1)
+        : "0.0";
+
+    let mostAbsentChoriste = null;
+    if (filtered.length > 0) {
+      const countById = {};
+      for (const r of filtered) {
+        const id = r.choriste._id.toString();
+        countById[id] = (countById[id] || 0) + 1;
+      }
+      const maxAbsences = Math.max(...Object.values(countById));
+      const topId = Object.keys(countById).find(
+        (k) => countById[k] === maxAbsences,
+      );
+      const topRecord = filtered.find(
+        (r) => r.choriste._id.toString() === topId,
+      );
+      if (topRecord) {
+        mostAbsentChoriste = {
+          name: `${topRecord.choriste.firstName} ${topRecord.choriste.lastName}`,
+          absences: maxAbsences,
+          pupitre: topRecord.choriste.pupitre,
+        };
+      }
+    }
+
+    filtered.sort(
+      (a, b) => new Date(b.repetition.date) - new Date(a.repetition.date),
+    );
 
     res.json({
-      repetitions: repetitionsWithModificationStatus,
-      managerInfo: { name: `${manager.firstName} ${manager.lastName}` }
+      filterType,
+      filterValue: getFilterValue(req.query),
+      period: getPeriodInfo(filterType, req.query),
+      statistics: {
+        totalRepetitions: repetitions.length,
+        totalAbsences,
+        absenceRate: parseFloat(absenceRate),
+        mostAbsentChoriste,
+      },
+      absenceRecords: filtered,
+    });
+  } catch (error) {
+    console.error("[getManagerAbsenceReport]", error);
+    res.status(500).json({ message: "Erreur serveur." });
+  }
+};
+
+export const getAttendanceForConcert = async (req, res) => {
+  try {
+    const { concertId } = req.params;
+
+    const config = await Config.findOne();
+    const threshold = config ? config.participationThreshold : 70;
+
+    const repetitions = await Repetition.find({ concert: concertId });
+    if (!repetitions.length) {
+      return res
+        .status(404)
+        .json({ message: "Aucune répétition trouvée pour ce concert." });
+    }
+
+    const choristes = await User.find({
+      role: "choriste",
+      isLocked: { $ne: true },
     });
 
+    const participation = choristes.map((choriste) => {
+      let total = 0;
+      let attended = 0;
+
+      for (const rep of repetitions) {
+        if (!rep.pupitres.includes(choriste.pupitre)) continue;
+        total++;
+
+        const isPresent = rep.presentChoristes.some(
+          (p) => p.toString() === choriste._id.toString(),
+        );
+        const manualPres = rep.manualPresences.find(
+          (m) =>
+            m.choriste.toString() === choriste._id.toString() &&
+            m.type === "present",
+        );
+        if (isPresent || manualPres) attended++;
+      }
+
+      const attendanceRate =
+        total > 0 ? Math.round((attended / total) * 100) : 100;
+
+      return {
+        choristeId: choriste._id,
+        firstName: choriste.firstName,
+        lastName: choriste.lastName,
+        email: choriste.email,
+        pupitre: choriste.pupitre,
+        totalRepetitions: total,
+        attendedRepetitions: attended,
+        attendanceRate,
+      };
+    });
+
+    const relevant = participation.filter((p) => p.totalRepetitions > 0);
+
+    res.json({
+      threshold,
+      participation: relevant,
+      totalRepetitions: repetitions.length,
+      stats: {
+        totalChoristes: relevant.length,
+        avgAttendanceRate:
+          relevant.length > 0
+            ? Math.round(
+                relevant.reduce((s, p) => s + p.attendanceRate, 0) /
+                  relevant.length,
+              )
+            : 0,
+        pupitreBreakdown: VALID_PUPITRES.map((pupitre) => {
+          const pp = relevant.filter((p) => p.pupitre === pupitre);
+          const pr = repetitions.filter((r) => r.pupitres.includes(pupitre));
+          return {
+            pupitre,
+            choristes: pp.length,
+            repetitions: pr.length,
+            avgAttendance:
+              pp.length > 0
+                ? Math.round(
+                    pp.reduce((s, p) => s + p.attendanceRate, 0) / pp.length,
+                  )
+                : 0,
+          };
+        }),
+      },
+    });
   } catch (error) {
-    console.error('Error getting repetitions for manager:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
+    console.error("[getAttendanceForConcert]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };
 
 export const getComprehensiveAbsenceReport = async (req, res) => {
   try {
-    const {
-      filterType, pupitre, choristeId, date, dateFrom, dateTo, concertId
-    } = req.query;
+    const { filterType, pupitre, choristeId } = req.query;
 
-    const validFilterTypes = [
-      'general', 'pupitre', 'choriste', 'date', 
-      'dateFrom', 'season', 'dateRange', 'programme'
-    ];
-
-    if (!filterType || !validFilterTypes.includes(filterType)) {
-      return res.status(400).json({ 
-        message: 'Type de filtre invalide. Options: ' + validFilterTypes.join(', '),
-        received: filterType
+    if (!filterType || !VALID_FILTER_TYPES.includes(filterType)) {
+      return res.status(400).json({
+        message:
+          "Type de filtre invalide. Options : " + VALID_FILTER_TYPES.join(", "),
       });
     }
 
-    let repetitionQuery = {};
-    let dateFilter = {};
-    let concertDateFilter = {};
+    const { repetitionQuery, dateFilter } = buildDateFilters(
+      filterType,
+      req.query,
+    );
 
-    switch (filterType) {
-      case 'date':
-        if (!date) return res.status(400).json({ message: 'Date requise pour ce filtre.' });
-        const targetDate = new Date(date);
-        const nextDay = new Date(targetDate);
-        nextDay.setDate(nextDay.getDate() + 1);
-        dateFilter = { date: { $gte: targetDate, $lt: nextDay } };
-        concertDateFilter = { dateHeure: { $gte: targetDate, $lt: nextDay } };
-        break;
-      case 'dateFrom':
-        if (!dateFrom) return res.status(400).json({ message: 'Date de début requise.' });
-        dateFilter = { date: { $gte: new Date(dateFrom) } };
-        concertDateFilter = { dateHeure: { $gte: new Date(dateFrom) } };
-        break;
-      case 'season':
-        const now2 = new Date();
-        const yr = now2.getFullYear();
-        const ss = now2.getMonth() >= 8 ? new Date(yr, 8, 1) : new Date(yr - 1, 8, 1);
-        dateFilter = { date: { $gte: ss } };
-        concertDateFilter = { dateHeure: { $gte: ss } };
-        break;
-      case 'dateRange':
-        if (!dateFrom || !dateTo) return res.status(400).json({ message: 'Dates de début et fin requises.' });
-        dateFilter = { date: { $gte: new Date(dateFrom), $lte: new Date(dateTo) } };
-        concertDateFilter = { dateHeure: { $gte: new Date(dateFrom), $lte: new Date(dateTo) } };
-        break;
-      case 'programme':
-        if (!concertId) return res.status(400).json({ message: 'ID du concert/programme requis.' });
-        repetitionQuery.concert = concertId;
-        break;
+    let concertDateFilter = {};
+    if (dateFilter.date) {
+      const mapped = {};
+      if (dateFilter.date.$gte) mapped.$gte = dateFilter.date.$gte;
+      if (dateFilter.date.$lt) mapped.$lt = dateFilter.date.$lt;
+      if (dateFilter.date.$lte) mapped.$lte = dateFilter.date.$lte;
+      concertDateFilter = { dateHeure: mapped };
     }
 
-    const finalRepQuery = { ...repetitionQuery, ...dateFilter };
+    const userFilter = {
+      role: "choriste",
+      isLocked: { $ne: true },
+      ...(filterType === "pupitre" && pupitre ? { pupitre } : {}),
+      ...(filterType === "choriste" && choristeId ? { _id: choristeId } : {}),
+    };
 
     const [repetitions, concerts, choristes, config] = await Promise.all([
-      Repetition.find(finalRepQuery)
-        .populate('concert', 'title')
-        .populate('presentChoristes', '_id pupitre')
-        .populate('absentChoristes.choriste', '_id pupitre')
-        .populate('manualPresences.choriste', '_id pupitre')
+      Repetition.find({ ...repetitionQuery, ...dateFilter })
+        .populate("concert", "title")
+        .populate("presentChoristes", "_id pupitre")
+        .populate("absentChoristes.choriste", "_id pupitre")
+        .populate("manualPresences.choriste", "_id pupitre")
         .sort({ date: 1 }),
-      Concert.find({ ...concertDateFilter })
-        .populate('finalParticipants', '_id')
-        .populate('availableChoristes', '_id')
-        .populate('absentChoristes.choriste', '_id')
+      Concert.find(concertDateFilter)
+        .populate("finalParticipants", "_id")
+        .populate("availableChoristes", "_id")
+        .populate("absentChoristes.choriste", "_id")
         .sort({ dateHeure: 1 }),
-      User.find({
-        role: 'choriste',
-        isLocked: { $ne: true },
-        ...(filterType === 'pupitre' && pupitre ? { pupitre } : {}),
-        ...(filterType === 'choriste' && choristeId ? { _id: choristeId } : {}),
-      }).select('firstName lastName email pupitre eliminationRecords'),
-      Config.findOne()
+      User.find(userFilter).select(
+        "firstName lastName email pupitre eliminationRecords",
+      ),
+      Config.findOne(),
     ]);
 
     const threshold = config ? config.participationThreshold : 70;
@@ -1293,100 +1311,100 @@ export const getComprehensiveAbsenceReport = async (req, res) => {
           totalChoristes: 0,
           totalRepetitions: repetitions.length,
           totalConcerts: concerts.length,
-          threshold
+          threshold,
         },
-        choristesData: []
+        choristesData: [],
       });
     }
 
-    const choristesData = choristes.map(choriste => {
-      const relevantRepetitions = repetitions.filter(rep => 
-        rep.pupitres.includes(choriste.pupitre)
+    const choristesData = choristes.map((choriste) => {
+      const relevantReps = repetitions.filter((r) =>
+        r.pupitres.includes(choriste.pupitre),
       );
+      let attendedReps = 0;
+      const repetitionAbsences = [];
 
-      const totalRepetitions = relevantRepetitions.length;
-      let attendedRepetitions = 0;
-      let repetitionAbsences = [];
-
-      relevantRepetitions.forEach(repetition => {
-        let isPresent = false;
+      for (const rep of relevantReps) {
+        let isPresent = rep.presentChoristes.some(
+          (p) => p._id.toString() === choriste._id.toString(),
+        );
         let absenceReason = null;
 
-        if (repetition.presentChoristes.some(
-          present => present._id.toString() === choriste._id.toString()
-        )) isPresent = true;
-
-        const autoAbsent = repetition.absentChoristes.find(
-          absent => absent.choriste._id.toString() === choriste._id.toString()
+        const autoAbsent = rep.absentChoristes.find(
+          (a) => a.choriste._id.toString() === choriste._id.toString(),
         );
-        if (autoAbsent) { isPresent = false; absenceReason = autoAbsent.reason; }
+        if (autoAbsent) {
+          isPresent = false;
+          absenceReason = autoAbsent.reason;
+        }
 
-        const manualPresence = repetition.manualPresences.find(
-          manual => manual.choriste._id.toString() === choriste._id.toString()
+        const manual = rep.manualPresences.find(
+          (m) => m.choriste._id.toString() === choriste._id.toString(),
         );
-        if (manualPresence) {
-          isPresent = manualPresence.type === 'present';
-          if (!isPresent) absenceReason = manualPresence.reason;
+        if (manual) {
+          isPresent = manual.type === "present";
+          if (!isPresent) absenceReason = manual.reason;
         }
 
         if (isPresent) {
-          attendedRepetitions++;
+          attendedReps++;
         } else {
           repetitionAbsences.push({
-            repetitionId: repetition._id,
-            date: repetition.date,
-            location: repetition.location,
-            concertTitle: repetition.concert?.title || 'Concert non défini',
-            pupitres: repetition.pupitres,
-            reason: absenceReason || 'Non marqué présent',
-            isManual: !!manualPresence
+            repetitionId: rep._id,
+            date: rep.date,
+            location: rep.location,
+            concertTitle: rep.concert?.title || "Concert non défini",
+            pupitres: rep.pupitres,
+            reason: absenceReason || "Non marqué présent",
+            isManual: !!manual,
           });
         }
-      });
+      }
 
-      const repetitionAttendanceRate = totalRepetitions > 0 
-        ? (attendedRepetitions / totalRepetitions) * 100 
-        : 100;
+      const repRate =
+        relevantReps.length > 0
+          ? (attendedReps / relevantReps.length) * 100
+          : 100;
 
-      const totalConcerts = concerts.length;
       let validatedConcerts = 0;
-      let concertAbsences = [];
+      const concertAbsences = [];
 
-      concerts.forEach(concert => {
+      for (const concert of concerts) {
         const isValidated = concert.finalParticipants.some(
-          participant => participant._id.toString() === choriste._id.toString()
+          (p) => p._id.toString() === choriste._id.toString(),
         );
-        const hasMarkedAvailability = concert.availableChoristes.some(
-          ac => ac._id.toString() === choriste._id.toString()
+        const hasMarked = concert.availableChoristes.some(
+          (a) => a._id.toString() === choriste._id.toString(),
         );
         const absentRecord = concert.absentChoristes.find(
-          absent => absent.choriste._id.toString() === choriste._id.toString()
+          (a) => a.choriste._id.toString() === choriste._id.toString(),
         );
         const isEliminated = choriste.eliminationRecords?.some(
-          record => record.concertId?.toString() === concert._id.toString()
+          (r) => r.concertId?.toString() === concert._id.toString(),
         );
 
         if (isValidated && !isEliminated) {
           validatedConcerts++;
         } else {
-          let absenceReason = 'N\'a pas marqué sa disponibilité';
-          if (isEliminated) absenceReason = 'Éliminé';
-          else if (absentRecord) absenceReason = getAbsenceReasonMessage(absentRecord.reason);
-          else if (hasMarkedAvailability && !isValidated) absenceReason = 'Disponible mais non validé';
+          let reason = "N'a pas marqué sa disponibilité";
+          if (isEliminated) reason = "Éliminé";
+          else if (absentRecord)
+            reason = getAbsenceReasonMessage(absentRecord.reason);
+          else if (hasMarked && !isValidated)
+            reason = "Disponible mais non validé";
 
           concertAbsences.push({
             concertId: concert._id,
             title: concert.title,
             dateHeure: concert.dateHeure,
-            reason: absenceReason,
-            markedAt: absentRecord?.markedAt || null
+            reason,
+            markedAt: absentRecord?.markedAt || null,
           });
         }
-      });
+      }
 
-      const concertAttendanceRate = totalConcerts > 0 
-        ? (validatedConcerts / totalConcerts) * 100 
-        : 0;
+      const concertRate =
+        concerts.length > 0 ? (validatedConcerts / concerts.length) * 100 : 0;
 
       return {
         choriste: {
@@ -1394,50 +1412,56 @@ export const getComprehensiveAbsenceReport = async (req, res) => {
           firstName: choriste.firstName,
           lastName: choriste.lastName,
           email: choriste.email,
-          pupitre: choriste.pupitre
+          pupitre: choriste.pupitre,
         },
         repetitionStats: {
-          totalRepetitions,
-          attendedRepetitions,
-          attendanceRate: Math.round(repetitionAttendanceRate * 10) / 10,
-          absencesCount: totalRepetitions - attendedRepetitions,
+          totalRepetitions: relevantReps.length,
+          attendedRepetitions: attendedReps,
+          attendanceRate: Math.round(repRate * 10) / 10,
+          absencesCount: relevantReps.length - attendedReps,
           allRepetitionsCount: repetitions.length,
-          pupitreSpecificNote: totalRepetitions < repetitions.length 
-            ? `Seules les ${totalRepetitions} répétitions concernant votre pupitre (${choriste.pupitre}) sont prises en compte.`
-            : null
+          pupitreSpecificNote:
+            relevantReps.length < repetitions.length
+              ? `Seules les ${relevantReps.length} répétitions de votre pupitre (${choriste.pupitre}) sont comptabilisées.`
+              : null,
         },
         concertStats: {
-          totalConcerts,
+          totalConcerts: concerts.length,
           availableConcerts: validatedConcerts,
-          attendanceRate: Math.round(concertAttendanceRate * 10) / 10,
-          absencesCount: totalConcerts - validatedConcerts
+          attendanceRate: Math.round(concertRate * 10) / 10,
+          absencesCount: concerts.length - validatedConcerts,
         },
         repetitionAbsences,
         concertAbsences,
-        overallAttendanceRate: Math.round(((repetitionAttendanceRate + concertAttendanceRate) / 2) * 10) / 10,
-        isAtRisk: repetitionAttendanceRate < threshold || concertAttendanceRate < threshold
+        overallAttendanceRate:
+          Math.round(((repRate + concertRate) / 2) * 10) / 10,
+        isAtRisk: repRate < threshold || concertRate < threshold,
       };
     });
 
     choristesData.sort((a, b) => {
-      const aOverall = (a.repetitionStats.attendanceRate + a.concertStats.attendanceRate) / 2;
-      const bOverall = (b.repetitionStats.attendanceRate + b.concertStats.attendanceRate) / 2;
-      return aOverall - bOverall;
+      const aAvg =
+        (a.repetitionStats.attendanceRate + a.concertStats.attendanceRate) / 2;
+      const bAvg =
+        (b.repetitionStats.attendanceRate + b.concertStats.attendanceRate) / 2;
+      return aAvg - bAvg;
     });
 
-    const totalRepetitionAbsences = choristesData.reduce(
-      (sum, c) => sum + c.repetitionStats.absencesCount, 0
+    const totalRepAbs = choristesData.reduce(
+      (s, c) => s + c.repetitionStats.absencesCount,
+      0,
     );
-    const totalConcertAbsences = choristesData.reduce(
-      (sum, c) => sum + c.concertStats.absencesCount, 0
+    const totalConcertAbs = choristesData.reduce(
+      (s, c) => s + c.concertStats.absencesCount,
+      0,
     );
-    const avgRepetitionRate = choristesData.length > 0 
-      ? choristesData.reduce((sum, c) => sum + c.repetitionStats.attendanceRate, 0) / choristesData.length
-      : 0;
-    const avgConcertRate = choristesData.length > 0 
-      ? choristesData.reduce((sum, c) => sum + c.concertStats.attendanceRate, 0) / choristesData.length
-      : 0;
-    const atRiskCount = choristesData.filter(c => c.isAtRisk).length;
+    const avgRepRate =
+      choristesData.reduce((s, c) => s + c.repetitionStats.attendanceRate, 0) /
+      (choristesData.length || 1);
+    const avgConcertRate =
+      choristesData.reduce((s, c) => s + c.concertStats.attendanceRate, 0) /
+      (choristesData.length || 1);
+    const atRiskCount = choristesData.filter((c) => c.isAtRisk).length;
 
     res.json({
       filterType,
@@ -1447,28 +1471,17 @@ export const getComprehensiveAbsenceReport = async (req, res) => {
         totalChoristes: choristes.length,
         totalRepetitions: repetitions.length,
         totalConcerts: concerts.length,
-        totalRepetitionAbsences,
-        totalConcertAbsences,
-        avgRepetitionAttendanceRate: Math.round(avgRepetitionRate * 10) / 10,
+        totalRepetitionAbsences: totalRepAbs,
+        totalConcertAbsences: totalConcertAbs,
+        avgRepetitionAttendanceRate: Math.round(avgRepRate * 10) / 10,
         avgConcertAttendanceRate: Math.round(avgConcertRate * 10) / 10,
         atRiskCount,
-        threshold
+        threshold,
       },
-      choristesData
+      choristesData,
     });
-
   } catch (error) {
-    console.error('Error generating comprehensive absence report:', error);
-    res.status(500).json({ message: 'Erreur serveur.' });
-  }
-};
-
-const getAbsenceReasonMessage = (reason) => {
-  switch (reason) {
-    case 'did_not_mark_disponibilite': return 'N\'a pas marqué sa disponibilité';
-    case 'removed_by_admin': return 'Retiré par admin';
-    case 'removed_by_chef': return 'Retiré par chef de pupitre';
-    case 'manual_absence': return 'Absence manuelle';
-    default: return 'Absent';
+    console.error("[getComprehensiveAbsenceReport]", error);
+    res.status(500).json({ message: "Erreur serveur." });
   }
 };

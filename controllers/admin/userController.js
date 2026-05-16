@@ -23,7 +23,7 @@ const generateRandomPassword = () => {
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+{}";
   return Array.from(
     { length: 12 },
-    () => chars[Math.floor(Math.random() * chars.length)]
+    () => chars[Math.floor(Math.random() * chars.length)],
   ).join("");
 };
 
@@ -72,29 +72,47 @@ export const createUser = async (req, res) => {
     let choristeStatus = status;
     if (role === "choriste") {
       if (!identityNumber) {
-        return res.status(400).json({ message: "Identity number is required for choriste." });
+        return res
+          .status(400)
+          .json({ message: "Identity number is required for choriste." });
       }
       if (!identityType) {
-        return res.status(400).json({ message: "Identity type is required for choriste." });
+        return res
+          .status(400)
+          .json({ message: "Identity type is required for choriste." });
       }
       if (!phoneCountryCode || !phone) {
-        return res.status(400).json({ message: "Phone and country code are required for choriste." });
+        return res
+          .status(400)
+          .json({
+            message: "Phone and country code are required for choriste.",
+          });
       }
       if (!professionalSituation) {
-        return res.status(400).json({ message: "Professional situation is required for choriste." });
+        return res
+          .status(400)
+          .json({
+            message: "Professional situation is required for choriste.",
+          });
       }
       if (!gender || !birthDate || !nationality || !height) {
-        return res.status(400).json({ message: "Missing required fields for choriste." });
+        return res
+          .status(400)
+          .json({ message: "Missing required fields for choriste." });
       }
       // Set default status if not provided
       if (!choristeStatus) choristeStatus = "Junior";
       if (!["Junior", "Sénior", "Vétéran"].includes(choristeStatus)) {
-        return res.status(400).json({ message: "Status must be Junior, Sénior, or Vétéran." });
+        return res
+          .status(400)
+          .json({ message: "Status must be Junior, Sénior, or Vétéran." });
       }
       // Check for duplicate identity number
       const existingByIdentity = await User.findOne({ identityNumber });
       if (existingByIdentity) {
-        return res.status(409).json({ message: "Identity number already exists." });
+        return res
+          .status(409)
+          .json({ message: "Identity number already exists." });
       }
     }
 
@@ -122,7 +140,9 @@ export const createUser = async (req, res) => {
       userData.identityNumber = identityNumber;
       userData.height = height;
       userData.hasMusicalKnowledge = !!hasMusicalKnowledge;
-      userData.musicalExperience = hasMusicalKnowledge ? musicalExperience || "" : "";
+      userData.musicalExperience = hasMusicalKnowledge
+        ? musicalExperience || ""
+        : "";
       userData.isActiveInOtherChoir = !!isActiveInOtherChoir;
       userData.otherChoir = isActiveInOtherChoir ? otherChoir || "" : "";
       userData.pupitre = pupitre || "";
@@ -160,15 +180,30 @@ export const createUser = async (req, res) => {
   }
 };
 
-
 export const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
     // Extract all fields from req.body as before
     const {
-      firstName, lastName, email, role, phone, phoneCountryCode, professionalSituation,
-      gender, birthDate, nationality, identityType, identityNumber, height,
-      hasMusicalKnowledge, musicalExperience, isActiveInOtherChoir, otherChoir, pupitre, status
+      firstName,
+      lastName,
+      email,
+      role,
+      phone,
+      phoneCountryCode,
+      professionalSituation,
+      gender,
+      birthDate,
+      nationality,
+      identityType,
+      identityNumber,
+      height,
+      hasMusicalKnowledge,
+      musicalExperience,
+      isActiveInOtherChoir,
+      otherChoir,
+      pupitre,
+      status,
     } = req.body;
 
     // Load existing user
@@ -189,14 +224,35 @@ export const updateUser = async (req, res) => {
     // Choriste-specific validation
     let choristeStatus = status;
     if (role === "choriste") {
-      if (!identityNumber) return res.status(400).json({ message: "Identity number is required for choriste." });
-      if (!identityType) return res.status(400).json({ message: "Identity type is required for choriste." });
-      if (!phoneCountryCode || !phone) return res.status(400).json({ message: "Phone and country code are required for choriste." });
-      if (!professionalSituation) return res.status(400).json({ message: "Professional situation is required for choriste." });
-      if (!gender || !birthDate || !nationality || !height) return res.status(400).json({ message: "Missing required fields for choriste." });
+      if (!identityNumber)
+        return res
+          .status(400)
+          .json({ message: "Identity number is required for choriste." });
+      if (!identityType)
+        return res
+          .status(400)
+          .json({ message: "Identity type is required for choriste." });
+      if (!phoneCountryCode || !phone)
+        return res
+          .status(400)
+          .json({
+            message: "Phone and country code are required for choriste.",
+          });
+      if (!professionalSituation)
+        return res
+          .status(400)
+          .json({
+            message: "Professional situation is required for choriste.",
+          });
+      if (!gender || !birthDate || !nationality || !height)
+        return res
+          .status(400)
+          .json({ message: "Missing required fields for choriste." });
       if (!choristeStatus) choristeStatus = "Junior";
       if (!["Junior", "Sénior", "Vétéran"].includes(choristeStatus)) {
-        return res.status(400).json({ message: "Status must be Junior, Sénior, or Vétéran." });
+        return res
+          .status(400)
+          .json({ message: "Status must be Junior, Sénior, or Vétéran." });
       }
       // Check for duplicate identity number (exclude current user)
       const existingByIdentity = await User.findOne({
@@ -204,7 +260,9 @@ export const updateUser = async (req, res) => {
         _id: { $ne: id },
       });
       if (existingByIdentity) {
-        return res.status(409).json({ message: "Identity number already exists." });
+        return res
+          .status(409)
+          .json({ message: "Identity number already exists." });
       }
     }
 
@@ -533,7 +591,7 @@ export const getAcceptedMemberships = async (req, res) => {
         status: 1,
         memberstatus: 1,
         pupitre: 1,
-      }
+      },
     );
 
     res.status(200).json(acceptedMembers);
@@ -560,7 +618,7 @@ export const acceptRetenuCandidates = async (req, res) => {
     });
 
     const validEvaluations = retenuEvaluations.filter(
-      (evalu) => evalu.candidate !== null
+      (evalu) => evalu.candidate !== null,
     );
 
     if (validEvaluations.length === 0) {
@@ -652,7 +710,7 @@ export const acceptRetenuCandidates = async (req, res) => {
             } catch (error) {
               console.error(
                 `❌ Failed charter invitation: ${candidate.firstName} ${candidate.lastName}`,
-                error.message
+                error.message,
               );
               return {
                 success: false,
@@ -673,7 +731,7 @@ export const acceptRetenuCandidates = async (req, res) => {
           });
 
           const progress = Math.round(
-            ((i + batch.length) / updatedCandidates.length) * 100
+            ((i + batch.length) / updatedCandidates.length) * 100,
           );
           // console.log(`📊 Charter invitation progress: ${progress}% (${successful} successful, ${failed} failed)`);
 
@@ -690,7 +748,7 @@ export const acceptRetenuCandidates = async (req, res) => {
       } catch (backgroundError) {
         console.error(
           "💥 Charter invitation background processing failed:",
-          backgroundError
+          backgroundError,
         );
       }
     });
@@ -857,7 +915,7 @@ export const signCharter = async (req, res) => {
         // ✅ NEW: Automatic pupitre assignment from tessiture
         pupitre: assignedPupitre,
       },
-      { new: true }
+      { new: true },
     );
 
     // ✅ UPDATED: Send account credentials email with pupitre information
@@ -965,7 +1023,7 @@ export const updatePupitre = async (req, res) => {
           } catch (emailError) {
             console.error(
               `❌ Failed to notify choriste of their own change:`,
-              emailError
+              emailError,
             );
           }
         }
@@ -1036,7 +1094,7 @@ export const updatePupitre = async (req, res) => {
                   chorisiteEmail: user.email,
                   newPupitre: newPupitre,
                   oldPupitre: oldPupitre || "Non défini",
-                }
+                },
               );
 
               await sendNotification({
@@ -1057,7 +1115,7 @@ export const updatePupitre = async (req, res) => {
       } catch (emailError) {
         console.error(
           `❌ Background email error for pupitre change:`,
-          emailError
+          emailError,
         );
       }
     });
@@ -1082,7 +1140,7 @@ export const getActiveChoristes = async (req, res) => {
   } catch (error) {
     console.error(
       "Erreur lors de la récupération des choristes actifs:",
-      error
+      error,
     );
     res.status(500).json({
       message: "Erreur serveur lors de la récupération des choristes.",
@@ -1325,5 +1383,79 @@ export const getChoristesByPupitre = async (req, res) => {
   } catch (error) {
     console.error("Error getting choristes by pupitre:", error);
     res.status(500).json({ message: "Erreur serveur." });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// GET /users/me/reminder-preferences
+// ─────────────────────────────────────────────────────────────
+export const getReminderPreferences = async (req, res) => {
+  try {
+    const user = await User.findById(req.auth.userId).select(
+      "reminderPreferences"
+    );
+    if (!user)
+      return res.status(404).json({ message: "Utilisateur introuvable." });
+
+    // Valeurs par défaut si le champ n'existe pas encore
+    const prefs = user.reminderPreferences ?? {
+      dayBefore:  { enabled: true, minutesBefore: 1440 },
+      twoHours:   { enabled: true, minutesBefore: 120  },
+      tenMinutes: { enabled: true, minutesBefore: 10   },
+    };
+
+    // ✅ Retourner directement l'objet (pas enveloppé dans { reminderPreferences })
+    // pour correspondre à ce que le Flutter attend :
+    // prefs['dayBefore']?['enabled'], prefs['twoHours']?['minutesBefore'], etc.
+    res.json(prefs);
+  } catch (err) {
+    console.error("[getReminderPreferences]", err);
+    res.status(500).json({ message: "Erreur serveur." });
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// PATCH /users/me/reminder-preferences
+// ─────────────────────────────────────────────────────────────
+export const updateReminderPreferences = async (req, res) => {
+  try {
+    const { dayBefore, twoHours, tenMinutes } = req.body;
+    const update = {};
+
+    // ✅ Validation unique : minutesBefore >= 1 (n'importe quelle valeur positive)
+    const validateSlot = (slot, name) => {
+      if (!slot) return;
+      if (slot.enabled !== undefined) {
+        update[`reminderPreferences.${name}.enabled`] = !!slot.enabled;
+      }
+      if (slot.minutesBefore !== undefined) {
+        const v = parseInt(slot.minutesBefore);
+        if (isNaN(v) || v < 1) {
+          throw new Error(
+            `${name}.minutesBefore doit être un entier positif (min 1 minute).`
+          );
+        }
+        update[`reminderPreferences.${name}.minutesBefore`] = v;
+      }
+    };
+
+    validateSlot(dayBefore,  "dayBefore");
+    validateSlot(twoHours,   "twoHours");
+    validateSlot(tenMinutes, "tenMinutes");
+
+    const user = await User.findByIdAndUpdate(
+      req.auth.userId,
+      { $set: update },
+      { new: true, runValidators: true }
+    ).select("reminderPreferences");
+
+    if (!user)
+      return res.status(404).json({ message: "Utilisateur introuvable." });
+
+    // ✅ Retourner les prefs mises à jour (même format que GET)
+    res.json(user.reminderPreferences);
+  } catch (err) {
+    console.error("[updateReminderPreferences]", err);
+    res.status(400).json({ message: err.message || "Erreur serveur." });
   }
 };
