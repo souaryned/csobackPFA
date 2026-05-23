@@ -1,5 +1,6 @@
 import Leave from '../../models/recordModel.js';  // adjust the path
-import User from '../../models/userModel.js';  
+import User from '../../models/userModel.js';
+import Concert from '../../models/concertModel.js';  
 import { sendNotification } from "../../tools/mail/mailNotif.js";
 import { createLeaveAcceptedEmailTemplate, createLeaveDeclaredEmailTemplate } from "../../tools/mail/notifTemplate.js";
 
@@ -70,6 +71,25 @@ export const declareLeave = async (req, res) => {
 
     if (overlappingLeave) {
       return res.status(400).json({ message: 'Un congé existe déjà qui chevauche cette période.' });
+    }
+
+    const rangeStart = new Date(start);
+    rangeStart.setHours(0, 0, 0, 0);
+    const rangeEnd = new Date(end);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    const concertDuringLeave = await Concert.findOne({
+      dateHeure: { $gte: rangeStart, $lte: rangeEnd },
+    }).select('title dateHeure');
+
+    if (concertDuringLeave) {
+      const concertDate = new Date(concertDuringLeave.dateHeure).toLocaleDateString(
+        'fr-FR',
+        { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' },
+      );
+      return res.status(400).json({
+        message: `Impossible de déclarer un congé : le concert « ${concertDuringLeave.title} » est prévu le ${concertDate}.`,
+      });
     }
 
     // Create leave

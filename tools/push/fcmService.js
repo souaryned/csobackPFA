@@ -26,6 +26,7 @@ export const NOTIF_TYPES = {
   NEW_CONCERT: "new_concert",
   CONCERT_UPDATED: "concert_updated",
   CONCERT_CANCELLED: "concert_cancelled",
+  NEW_SURVEY: "new_survey",
 };
 
 // ── Codes tokens invalides ───────────────────────────────────
@@ -111,7 +112,12 @@ export const sendPushNotification = async ({
         if (!resp.success) {
           const errCode = resp.error?.code ?? resp.error?.message ?? "";
 
-          console.error(`[FCM] ❌ Token invalide [${idx}] : ${errCode}`);
+          console.error(`[FCM] ❌ Échec [${idx}] : ${errCode}`);
+          if (errCode.includes("invalid-credential")) {
+            console.error(
+              "[FCM] 🔑 Clé service Firebase invalide — régénérez serviceAccountKey.json dans la console Firebase (projet cso-mobile-23643).",
+            );
+          }
 
           const isInvalid = INVALID_TOKEN_CODES.some((c) =>
             errCode.includes(c),
@@ -202,6 +208,20 @@ export const notifyUpdatedConcert = (tokens, concert) =>
     data: {
       type: NOTIF_TYPES.CONCERT_UPDATED,
       concertId: String(concert._id),
+    },
+  });
+
+export const notifyNewSurvey = (tokens, survey) =>
+  sendPushNotification({
+    tokens,
+    title: "📋 Nouveau sondage",
+    body: survey.titre
+      ? `« ${survey.titre} » — votre réponse est attendue`
+      : "Un sondage vous est destiné",
+    data: {
+      type: NOTIF_TYPES.NEW_SURVEY,
+      surveyId: String(survey._id),
+      surveyTitle: String(survey.titre || ""),
     },
   });
 

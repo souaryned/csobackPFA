@@ -4,6 +4,8 @@ import cors from "cors";
 import mongoose from "mongoose";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import surveyRoutes from './routes/surveyRoutes.js';
+
 
 import { MONGO_URI } from "./config.js";
 
@@ -84,6 +86,8 @@ app.use("/messages", messageRoutes);
 // Choriste
 app.use("/leave", recordRouter);
 app.use("/choriste", choristeRoutes);
+app.use('/surveys', surveyRoutes);
+
 
 // ── Crons ────────────────────────────────────────────────────
 scheduleRepetitionReminders();

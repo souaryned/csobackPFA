@@ -13,4 +13,4 @@ uploads/*
 !uploads/**/.gitkeep
 
 # Google service account key
-tools/serviceAccountKey.json.json
+tools/serviceAccountKey.json
